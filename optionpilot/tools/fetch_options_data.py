@@ -1,36 +1,46 @@
-"""Tool: fetch_options_data — historical OPRA pull via DatabentoFetcher (approval-gated)."""
+"""Tool: fetch_options_data — check availability + cost, then cache a chain (approval-gated)."""
 
 from __future__ import annotations
 
 from optionpilot.config import Config
-from optionpilot.data.databento_fetcher import DatabentoFetcher
+from optionpilot.data.databento_fetcher import CostGuardError, DatabentoFetcher
 from optionpilot.tools.base import ToolSpec
 
 PARAMETERS = {
     "type": "object",
     "properties": {
-        "symbols": {"type": "array", "items": {"type": "string"},
-                    "description": "Underlying or OSI option symbols, e.g. ['SPY']"},
-        "schema": {"type": "string", "default": "ohlcv-1m",
-                   "description": "Databento schema, e.g. ohlcv-1m, trades, cbbo-1m"},
-        "start": {"type": "string", "description": "ISO date, e.g. 2024-01-01"},
-        "end": {"type": "string", "description": "ISO date, e.g. 2024-03-01"},
+        "ticker": {"type": "string", "description": "Underlying ticker, e.g. ZETA"},
+        "start": {"type": "string", "description": "ISO date"},
+        "end": {"type": "string", "description": "ISO date"},
+        "estimate_only": {"type": "boolean", "default": False,
+                          "description": "If true, only return the estimated cost, do not download."},
     },
-    "required": ["symbols", "start", "end"],
+    "required": ["ticker", "start", "end"],
 }
 
 
 def build(config: Config) -> ToolSpec:
     fetcher = DatabentoFetcher(config)
 
-    def handler(symbols, start, end, schema="ohlcv-1m"):
-        df = fetcher.fetch(symbols=symbols, schema=schema, start=start, end=end)
-        return {"rows": len(df), "schema": schema, "symbols": symbols}
+    def handler(ticker, start, end, estimate_only=False):
+        parent = ticker if ticker.endswith(".OPT") else f"{ticker.upper()}.OPT"
+        est = fetcher.estimate_cost(symbols=[parent], schema="ohlcv-1d",
+                                    start=start, end=end, stype_in="parent")
+        info = {"ticker": ticker.upper(), "estimated_usd": round(est.usd, 4),
+                "records": est.record_count, "guard_usd": config.max_fetch_usd}
+        if estimate_only:
+            return info
+        try:
+            df = fetcher.fetch(symbols=[parent], schema="ohlcv-1d", start=start, end=end,
+                               stype_in="parent")
+        except CostGuardError as e:
+            return {**info, "downloaded": False, "blocked_by_guard": str(e)}
+        return {**info, "downloaded": True, "rows": len(df)}
 
     return ToolSpec(
         name="fetch_options_data",
-        description="Fetch historical options/underlying data from Databento OPRA. "
-                    "Estimates cost first and is approval-gated to protect the credit budget.",
+        description="Check Databento OPRA data availability and cost for a ticker, and cache it. "
+                    "Estimates cost first; downloads are capped by the cost guard.",
         parameters=PARAMETERS,
         handler=handler,
         requires_approval=True,

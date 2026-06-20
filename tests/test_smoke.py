@@ -66,9 +66,6 @@ def test_doom_loop_detects_repetition():
 def test_default_tools_build():
     specs = default_tools(Config.load(dotenv=False))
     names = {s.name for s in specs}
-    assert names == {
-        "fetch_options_data", "calculate_features", "predict_buy_point",
-        "run_backtest", "generate_report",
-    }
+    assert names == {"fetch_options_data", "run_backtest", "detect_unusual_activity"}
     # the data fetch must be approval-gated
     assert next(s for s in specs if s.name == "fetch_options_data").requires_approval

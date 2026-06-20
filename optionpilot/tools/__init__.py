@@ -1,28 +1,24 @@
-"""Tools layer: the five core tools, plus a helper to register them on a ToolRouter."""
+"""Tools layer: the core tools, plus a helper to register them on a ToolRouter."""
 
 from __future__ import annotations
 
 from optionpilot.config import Config
 from optionpilot.tools import (
-    calculate_features,
+    detect_unusual_activity,
     fetch_options_data,
-    generate_report,
-    predict_buy_point,
     run_backtest,
 )
 from optionpilot.tools.base import ToolSpec
 
 _BUILDERS = [
     fetch_options_data.build,
-    calculate_features.build,
-    predict_buy_point.build,
     run_backtest.build,
-    generate_report.build,
+    detect_unusual_activity.build,
 ]
 
 
 def default_tools(config: Config) -> list[ToolSpec]:
-    """Instantiate the five core tools bound to the given config."""
+    """Instantiate the core tools bound to the given config."""
     return [build(config) for build in _BUILDERS]
 
 
