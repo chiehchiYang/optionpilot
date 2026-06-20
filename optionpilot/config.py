@@ -15,8 +15,12 @@ from dotenv import load_dotenv
 
 @dataclass(frozen=True)
 class Config:
-    # LLM
-    model: str = "deepseek/deepseek-chat"
+    # LLM (deepseek-chat retires 2026-07-24; use the v4-flash id directly)
+    model: str = "deepseek/deepseek-v4-flash"
+    # Optional OpenAI-compatible endpoint (local vLLM / Ollama / LM Studio). When set, the
+    # model string should be the served name, e.g. "hosted_vllm/Qwen/Qwen3-Coder-30B-A3B".
+    api_base: str | None = None
+    api_key: str | None = None  # for local servers any non-empty value works
 
     # Data
     databento_api_key: str | None = None
@@ -38,6 +42,8 @@ class Config:
             load_dotenv()
         return cls(
             model=os.getenv("OPTIONPILOT_MODEL", cls.model),
+            api_base=os.getenv("OPTIONPILOT_API_BASE") or None,
+            api_key=os.getenv("OPTIONPILOT_API_KEY") or None,
             databento_api_key=os.getenv("DATABENTO_API_KEY") or None,
             max_fetch_usd=float(os.getenv("OPTIONPILOT_MAX_FETCH_USD", cls.max_fetch_usd)),
             cache_dir=Path(os.getenv("OPTIONPILOT_CACHE_DIR", str(cls.cache_dir))),

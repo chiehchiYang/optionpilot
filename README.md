@@ -33,6 +33,24 @@ optionpilot "分析 SPY 的買點策略"   # headless
 optionpilot                   # interactive
 ```
 
+### Local model (zero-cost dev)
+
+Run a local OpenAI-compatible server and point OptionPilot at it — no API key, no rate limits.
+
+```bash
+bash scripts/serve_local.sh   # vLLM serving Qwen3-Coder-30B-A3B (FP8) on one GPU
+```
+
+Then in `.env`:
+
+```
+OPTIONPILOT_MODEL=hosted_vllm/Qwen/Qwen3-Coder-30B-A3B-Instruct-FP8
+OPTIONPILOT_API_BASE=http://localhost:8000/v1
+OPTIONPILOT_API_KEY=local
+```
+
+Caches are kept on `/media/user/data2` (the root disk is small); see the script header.
+
 ## Layout
 
 ```

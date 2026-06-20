@@ -32,7 +32,7 @@ class ExperimentLoop:
     def __init__(self, config: Config, router: ToolRouter, llm: LLMClient | None = None):
         self.config = config
         self.router = router
-        self.llm = llm or LLMClient(config.model)
+        self.llm = llm or LLMClient.from_config(config)
         self.context = ContextManager(compact_at_tokens=config.context_compact_tokens)
         self.doom = DoomLoopDetector()
         self.context.add("system", SYSTEM_PROMPT)
