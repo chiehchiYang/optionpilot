@@ -42,6 +42,9 @@ OptionPilot 是「**會自己研究期權策略、並用一整套嚴謹回測去
   「回撤較小的類 beta 股票替代品」，**非穩定 alpha**。OptionPilot 的價值在於**誠實量化** edge 還剩多少。
 - 不可妥協的驗證原則：**out-of-sample / walk-forward + 真實成本（價差/滑價/手續費）+ 壓力測試
   （Feb2018 / Mar2020 / 2022）**，碰真錢前先 paper trading + 小額 + 風控。
+- **個股期權研究方向（使用者選定，2026-06-21）**：除了指數賣方核心，也要支援**研究個股期權鏈**
+  （NOK 等）。誠實定位：個股缺指數那種賣方 alpha，故當作「**對有看法/想持有的個股做定義風險收租/進場
+  ＋訊號篩選**」，不是系統性 alpha。Stockwe 式訊號（見下節）即服務這個方向。
 
 ## 1. 已完成（可運作、有測試）
 
@@ -58,6 +61,27 @@ OptionPilot 是「**會自己研究期權策略、並用一整套嚴謹回測去
 - `calculate_features`、`BaselineModel`、`BacktestEngine.run`、`ExperimentTracker`、`generate_report` 仍是 stub。
 - 策略核心已定（定義風險賣方），這些現在依該策略設計（見「下一步」）。
 
+## 2.5 Stockwe 式功能（個股期權研究／篩選，規劃）
+
+目標：做到 [stockwe.com](https://www.stockwe.com) 那類「期權情報儀表板」的核心訊號——但**差異化原則不變**：
+可交易的訊號一律要**用回測驗證**，不是「相信我的 AI」。先用 Databento OPRA + 免費 SEC EDGAR 能做的，
+付費/外部資料源的留待未來。
+
+| Stockwe 功能 | 可行性 | 資料來源 | OptionPilot 落點 |
+|---|---|---|---|
+| **異常期權活動**（爆量、大單、volume vs open interest） | ✅ | Databento OPRA | 新工具 `detect_unusual_activity` + 特徵 |
+| **Put/Call ratio + premium flow**（看漲/看跌權利金比） | ✅ | Databento OPRA | `calculate_features` 內 |
+| **分鐘級多空期權量** | ✅（需 trades schema，成本較高需注意） | Databento OPRA | 特徵 |
+| **IV rank / IV percentile / skew** | ✅ | 自算（greeks/IV 模組） | 篩選訊號 |
+| **內部人交易（Form 4）** | ✅ 免費 | SEC EDGAR | 新工具 `fetch_insider_trades` |
+| **財報前後溢酬 / 機構定位** | ◐ 部分 | 財報日曆 + OPRA | 之後 |
+| **多 AI agent 協作訊號** | ✅ 已有 | — | `ExperimentLoop` |
+| 暗池 / 機構資金流 | ❌ out of scope | 需付費 prints（FINRA ATS 等） | 未來再評估 |
+| 社群情緒 | ❌ out of scope | 需社群資料源 | 未來再評估 |
+
+> 重點：把 Stockwe 最強的訊號（異常期權活動、put/call flow）**借來當特徵/篩選**，再用回測證明它們
+> 到底有沒有用——這比它的儀表板更有說服力。
+
 ## 3. 技術選擇（仍有效）
 
 | 層級 | 技術 |
@@ -71,12 +95,15 @@ OptionPilot 是「**會自己研究期權策略、並用一整套嚴謹回測去
 
 ## 4. 下一步（策略核心已定）
 
-1. 設計賣方策略的回測：`BacktestEngine.run` 算**賣 put / credit spread 的損益**（權利金收入、到期/行權、
+1. **個股期權取數**：用 `DatabentoFetcher` 抓 NOK 等個股期權鏈（先 1–2 年，成本 <$5 guard 內），存 Parquet。
+2. 設計賣方策略的回測：`BacktestEngine.run` 算**賣 put / credit spread 的損益**（權利金收入、到期/行權、
    **真實成本：價差+滑價+手續費**），不是股票代理。
-2. `calculate_features`：賣方策略需要的特徵（IV rank、VRP proxy、delta/到期選擇規則）。
-3. **walk-forward 切分** + **壓力測試**（Feb2018 / Mar2020 / 2022）。
-4. 用本地 Qwen 端到端跑出**誠實的** out-of-sample 數字（含最壞情境）。
-5. paper trading 驗證 → 小額實盤 + 風控，再談放大。
+3. `calculate_features`：賣方策略特徵（IV rank、VRP proxy、delta/到期選擇規則）。
+4. **walk-forward 切分** + **壓力測試**（Feb2018 / Mar2020 / 2022）。
+5. **Stockwe 式訊號（見 2.5）**：先做 `detect_unusual_activity` + put/call ratio（Databento），
+   再加 `fetch_insider_trades`（SEC EDGAR）。每個可交易訊號都用回測驗證。
+6. 用本地 Qwen 端到端跑出**誠實的** out-of-sample 數字（含最壞情境）。
+7. paper trading 驗證 → 小額實盤 + 風控，再談放大。
 
 ## 5. 差異化一句話
 
