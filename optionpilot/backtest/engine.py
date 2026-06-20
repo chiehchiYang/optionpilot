@@ -1,11 +1,11 @@
 """Backtest engine: turn buy-point probabilities into a position series and P&L.
 
-Phase 1 keeps it simple: threshold the (nudged) probability into long/flat positions on the
+Phase 1 keeps it simple: threshold the model signal into long/flat positions on the
 underlying as a proxy, apply transaction costs, and produce a per-period return series that
 metrics.summarize() consumes. Option-level P&L (using OPRA quotes + computed greeks) is the
 Phase 2 upgrade.
 
-TODO: implement run() once features + model + nudge are wired.
+TODO: implement run() once features + model are wired.
 """
 
 from __future__ import annotations

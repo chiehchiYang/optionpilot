@@ -11,6 +11,9 @@ venv/
 # Env / secrets
 .env
 .env.local
+api.txt
+*.key
+secrets.*
 
 # Caches / data
 .cache/

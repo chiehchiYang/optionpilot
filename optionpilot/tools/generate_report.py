@@ -1,9 +1,9 @@
-"""Tool: generate_report — assemble the strategy summary + ablation table + narrative.
+"""Tool: generate_report — assemble the strategy summary + run comparison + narrative.
 
-Pulls runs from the ExperimentTracker, renders the nudge on/off comparison, and writes a
+Pulls runs from the ExperimentTracker, renders a comparison of their metrics, and writes a
 Markdown report under runs/. This is the agent's final deliverable.
 
-TODO: implement Markdown rendering over ExperimentTracker.ablation_table().
+TODO: implement Markdown rendering over ExperimentTracker run history.
 """
 
 from __future__ import annotations
@@ -27,8 +27,8 @@ def build(config: Config) -> ToolSpec:
 
     return ToolSpec(
         name="generate_report",
-        description="Generate a Markdown report: strategy summary, backtest metrics, and the "
-                    "nudge ablation table with a narrative of what worked.",
+        description="Generate a Markdown report: strategy summary, backtest metrics, and a "
+                    "comparison across runs with a narrative of what worked.",
         parameters=PARAMETERS,
         handler=handler,
         tags=["report"],

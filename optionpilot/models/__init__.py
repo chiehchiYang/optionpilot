@@ -1,5 +1,5 @@
-"""Models: XGBoost baseline and the NudgeLayer (post-processing rule-reweight)."""
+"""Models: the strategy model(s) that turn features into trade signals."""
 
-from optionpilot.models.nudge import NudgeLayer, NudgeRule
+from optionpilot.models.baseline import BaselineModel
 
-__all__ = ["NudgeLayer", "NudgeRule"]
+__all__ = ["BaselineModel"]

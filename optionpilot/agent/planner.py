@@ -1,8 +1,8 @@
 """Planner: proposes the next experiment instead of blindly tweaking parameters.
 
 This is what makes OptionPilot an *intern* rather than a one-shot tool: after each backtest
-it looks at the metrics so far and proposes a concrete next experiment (new feature, a nudge
-rule, a hyperparameter change), with a rationale. Phase 1 surfaces the proposal for human
+it looks at the metrics so far and proposes a concrete next experiment (new feature, a rule
+change, a hyperparameter change), with a rationale. Phase 1 surfaces the proposal for human
 approval; Phase 2 lets the loop act on it automatically.
 
 TODO(phase2): implement LLM-driven hypothesis generation over the ExperimentTracker history.
@@ -16,7 +16,7 @@ from dataclasses import dataclass
 @dataclass
 class ExperimentProposal:
     hypothesis: str
-    change: str  # concrete change to apply (feature / nudge rule / hyperparam)
+    change: str  # concrete change to apply (feature / rule / hyperparam)
     rationale: str
 
 

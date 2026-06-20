@@ -7,7 +7,6 @@ from optionpilot.agent.router import ToolRouter
 from optionpilot.backtest import max_drawdown, sharpe_ratio, summarize, win_rate
 from optionpilot.config import Config
 from optionpilot.data.greeks import black_scholes_price, greeks, implied_volatility
-from optionpilot.models import NudgeLayer, NudgeRule
 from optionpilot.tools import default_tools
 
 
@@ -49,19 +48,6 @@ def test_metrics_basic():
     assert sharpe_ratio(r) == s["sharpe"]
     assert max_drawdown(r) == s["max_drawdown"]
     assert win_rate(r) == s["win_rate"]
-
-
-def test_nudge_layer_clips_and_ablates():
-    rule = NudgeRule("oversold", lambda f: 1.0 if f["rsi"] < 30 else 0.0, weight=0.2)
-    layer = NudgeLayer(rules=[rule])
-    p = np.array([0.5, 0.95])
-    feats = [{"rsi": 25}, {"rsi": 25}]
-    out = layer.apply(p, feats)
-    assert out[0] == 0.7  # 0.5 + 0.2
-    assert out[1] == 1.0  # clipped
-    # disabled => passthrough (ablation baseline)
-    layer.enabled = False
-    assert list(layer.apply(p, feats)) == [0.5, 0.95]
 
 
 def test_router_dispatch_errors_are_strings():

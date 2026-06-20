@@ -1,7 +1,6 @@
-"""Baseline buy-point model (XGBoost). Predicts P(profitable buy) from the feature row.
+"""Baseline strategy model (XGBoost). Predicts a trade signal from the feature row.
 
-Kept deliberately thin: fit/predict over a feature DataFrame + label vector. The NudgeLayer
-wraps predict() output downstream; this class knows nothing about nudging.
+Kept deliberately thin: fit/predict over a feature DataFrame + label vector.
 
 TODO: implement fit/predict over engineered features once the feature set is defined.
 """

@@ -2,8 +2,8 @@
 
 An autonomous **options-strategy research agent** — think of it as an *ML intern for options*.
 Given a natural-language task, it runs the full research loop itself: fetch data → engineer
-features → predict buy points (with a **Nudge** layer) → backtest → ablation → report, and
-proves every signal with rigorous backtesting instead of asking you to trust a black box.
+features → model a signal → backtest → report, and proves every signal with rigorous
+out-of-sample backtesting instead of asking you to trust a black box.
 
 > Architecture borrows patterns from [huggingface/ml-intern](https://github.com/huggingface/ml-intern)
 > (agentic loop, ContextManager, ToolRouter, approval gating, doom-loop detection) but is written
@@ -19,9 +19,9 @@ Early scaffold. See [plan.md](plan.md) for the full design and roadmap.
 |---|---|
 | Backtest data | Databento OPRA (historical, pay-as-you-go; $125 free credit), greeks computed locally |
 | Live quotes | deferred (yfinance delayed quotes when needed; no paid live feed) |
-| Nudge | post-processing rule-reweight layer → supports ablation |
+| Strategy core | under active research (see plan.md) — moving toward evidence-based, risk-managed options strategies |
 | Agent harness | written fresh, borrowing ml-intern patterns; multi-model via LiteLLM |
-| Signals | options-flow signals (put/call ratio, unusual activity) as features, validated by backtest |
+| Validation | out-of-sample / walk-forward + realistic costs, before any capital is risked |
 | Cost control | fetch-size/cost guard + approval gating on expensive pulls |
 
 ## Quick start
@@ -61,7 +61,7 @@ optionpilot/
   agent/            experiment loop, context manager, tool router, doom-loop, approval, planner
   tools/            fetch_options_data, calculate_features, predict_buy_point, run_backtest, generate_report
   data/             Databento fetcher (+ cost guard), Black-Scholes greeks
-  models/           XGBoost baseline, NudgeLayer
+  models/           XGBoost baseline strategy model
   backtest/         engine + metrics (Sharpe / MaxDD / WinRate / turnover)
   tracking/         experiment tracker (DuckDB)
 ```
