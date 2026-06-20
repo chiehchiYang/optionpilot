@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# Env / secrets
+.env
+.env.local
+
+# Caches / data
+.cache/
+data_cache/
+*.parquet
+*.duckdb
+*.duckdb.wal
+
+# Experiment outputs
+runs/
+reports/
+*.log
+
+# Tooling
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# OS / IDE
+.DS_Store
+.vscode/
+.idea/
