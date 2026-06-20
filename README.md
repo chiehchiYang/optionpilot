@@ -5,6 +5,25 @@ Given a natural-language task, it runs the full research loop itself: fetch data
 features → model a signal → backtest → report, and proves every signal with rigorous
 out-of-sample backtesting instead of asking you to trust a black box.
 
+## Goal
+
+OptionPilot stands on two pillars:
+
+1. **An ml-intern-style autonomous research loop.** Give it a task ("research credit-spread
+   strategies on SPY") and it runs the experiment loop itself — propose a hypothesis → fetch
+   data → engineer features → model/strategy → backtest → read metrics → propose the next
+   improvement → iterate → deliver the best strategy with a full, honest experiment log. It
+   proposes, iterates, and records on its own (`ExperimentLoop` + `Planner` + `ExperimentTracker`).
+
+2. **A rigorous, verifiable backtesting system.** Every strategy must pass the same honest bar:
+   out-of-sample / walk-forward evaluation, realistic costs (spread, slippage, fees, assignment),
+   full metrics (Sharpe, max drawdown, win rate, turnover) plus worst-case stress tests,
+   reproducible head-to-head run comparison, and honest reporting of negative results.
+
+**Success** is not "find a magic money signal" — it's being able to answer, for any candidate
+strategy, *how much edge actually survives costs out-of-sample, and what the worst case is*, so
+capital only goes to strategies that pass the bar.
+
 > Architecture borrows patterns from [huggingface/ml-intern](https://github.com/huggingface/ml-intern)
 > (agentic loop, ContextManager, ToolRouter, approval gating, doom-loop detection) but is written
 > fresh with no Hugging Face coupling, specialized for options-strategy research.
