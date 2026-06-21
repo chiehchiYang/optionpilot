@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import sys
+from datetime import date
 from typing import Any, Callable
 
 from optionpilot.agent.context import ContextManager
@@ -35,8 +36,15 @@ SYSTEM_PROMPT = (
     "if the strategy trails simply owning the stock. Report drawdowns, assignment rate, and "
     "underperformance honestly.\n"
     "4. run_backtest auto-saves a Markdown report and logs the run; tell the user the report path.\n"
+    "5. DATES: you have no clock — use the current date given below. Convert relative ranges "
+    "(e.g. 'last two years', 'two years back from today') into absolute ISO dates yourself. "
+    "Option data only exists up to roughly yesterday, so never use a future end date.\n"
     "Use the provided tools; never fabricate data or metrics."
 )
+
+
+def _system_prompt(today: str) -> str:
+    return f"{SYSTEM_PROMPT}\n\nThe current date is {today}."
 
 
 class ExperimentLoop:
@@ -54,7 +62,7 @@ class ExperimentLoop:
         self.doom = DoomLoopDetector()
         # on_event(kind, text): surfaces tool activity to the UI; defaults to stderr.
         self.on_event = on_event or self._default_event
-        self.context.add("system", SYSTEM_PROMPT)
+        self.context.add("system", _system_prompt(date.today().isoformat()))
 
     @staticmethod
     def _default_event(kind: str, text: str) -> None:
