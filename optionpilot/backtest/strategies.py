@@ -54,6 +54,37 @@ def _asof_price(dates: list, prices: list, d) -> float | None:
     return float(prices[pos]) if pos >= 0 else None
 
 
+def _summarize(trades, p, liquidity_skips, u_dates, u_prices):
+    """Build the returns array + metrics dict shared by the put- and call-selling backtests.
+    `assigned` in a trade means the short option finished ITM (put assigned / shares called)."""
+    returns = np.array([t["return"] for t in trades], dtype=float)
+    if not returns.size:
+        return returns, {}
+    total_return = float(np.prod(1.0 + returns) - 1.0)
+    entry_vols = [t["entry_volume"] for t in trades if t["entry_volume"] is not None]
+    cpy = (252.0 / p.entry_every_days) if p.entry_every_days > 0 else p.cycles_per_year
+    metrics = {
+        "n_trades": int(returns.size),
+        "win_rate": win_rate(returns),
+        "assigned_rate": float(np.mean([t["assigned"] for t in trades])),
+        "mean_trade_return": float(returns.mean()),
+        "total_return": total_return,
+        "sharpe_annualized": sharpe_ratio(returns, periods=cpy),
+        "max_drawdown": max_drawdown(returns),
+        "worst_trade": float(returns.min()),
+        "overlapping_samples": p.entry_every_days > 0,
+        "bid_fill_rate": float(np.mean([t["fill"] == "bid" for t in trades])),
+        "liquidity_skips": liquidity_skips,
+        "median_entry_volume": (float(np.median(entry_vols)) if entry_vols else None),
+    }
+    s0 = _asof_price(u_dates, u_prices, trades[0]["entry"])
+    s1 = _asof_price(u_dates, u_prices, trades[-1]["expiry"])
+    if s0 and s1 and s0 > 0:
+        metrics["benchmark_buy_hold"] = s1 / s0 - 1.0
+        metrics["excess_vs_buy_hold"] = total_return - (s1 / s0 - 1.0)
+    return returns, metrics
+
+
 def cash_secured_put_backtest(
     opt_df: pd.DataFrame,
     underlying: pd.Series,
@@ -148,34 +179,93 @@ def cash_secured_put_backtest(
         # advance: by cadence (overlap allowed) or, sequentially, to past this expiry
         i = (i + step) if p.entry_every_days > 0 else bisect.bisect_right(calendar, expiry)
 
-    returns = np.array([t["return"] for t in trades], dtype=float)
-    metrics = {}
-    if returns.size:
-        total_return = float(np.prod(1.0 + returns) - 1.0)
-        entry_vols = [t["entry_volume"] for t in trades if t["entry_volume"] is not None]
-        # annualize per-trade returns: cadence frequency if overlapping, else monthly-ish
-        cpy = (252.0 / p.entry_every_days) if p.entry_every_days > 0 else p.cycles_per_year
-        metrics = {
-            "n_trades": int(returns.size),
-            "win_rate": win_rate(returns),
-            "assigned_rate": float(np.mean([t["assigned"] for t in trades])),
-            "mean_trade_return": float(returns.mean()),
-            "total_return": total_return,
-            "sharpe_annualized": sharpe_ratio(returns, periods=cpy),
-            "max_drawdown": max_drawdown(returns),
-            "worst_trade": float(returns.min()),
-            "overlapping_samples": p.entry_every_days > 0,
-            "bid_fill_rate": float(np.mean([t["fill"] == "bid" for t in trades])),
-            "liquidity_skips": liquidity_skips,
-            "median_entry_volume": (float(np.median(entry_vols)) if entry_vols else None),
-        }
-        # Benchmark: buying & holding the underlying over the same traded window. Selling
-        # premium can post a fine win-rate yet badly trail buy-and-hold (it caps upside) —
-        # so this comparison is reported alongside, never omitted.
-        s0 = _asof_price(u_dates, u_prices, trades[0]["entry"])
-        s1 = _asof_price(u_dates, u_prices, trades[-1]["expiry"])
-        if s0 and s1 and s0 > 0:
-            bh = s1 / s0 - 1.0
-            metrics["benchmark_buy_hold"] = bh
-            metrics["excess_vs_buy_hold"] = total_return - bh
+    returns, metrics = _summarize(trades, p, liquidity_skips, u_dates, u_prices)
+    return CSPResult(trades=trades, returns=returns, metrics=metrics)
+
+
+def covered_call_backtest(
+    opt_df: pd.DataFrame,
+    underlying: pd.Series,
+    params: CSPParams | None = None,
+) -> CSPResult:
+    """Backtest systematic covered-call writing (the wheel's second leg).
+
+    Each cycle: hold 100 shares (basis = spot at entry) and sell one OTM call held to expiry.
+    Per-share P&L = min(S_exp, strike) - spot + premium (upside capped at the strike), so the
+    position keeps the stock's downside minus the premium cushion. `target_moneyness` here is
+    the call strike as a multiple of spot (>1 = OTM, e.g. 1.05).
+    """
+    p = params or CSPParams()
+    d = opt_df
+    cols = ["date", "strike", "expiry", "close", "volume", "bid"]
+    calls = d[(d["kind"] == "C") & d["close"].notna() & (d["close"] >= p.min_premium)]
+    calls = calls[[c for c in cols if c in calls.columns]].dropna(
+        subset=["date", "strike", "expiry", "close"])
+    for col in ("volume", "bid"):
+        if col not in calls.columns:
+            calls = calls.assign(**{col: np.nan})
+    if calls.empty:
+        return CSPResult()
+
+    by_date = {dt: g for dt, g in calls.groupby("date")}
+    calendar = sorted(by_date.keys())
+    u = underlying.sort_index()
+    u_dates = [x if isinstance(x, date) else pd.Timestamp(x).date() for x in u.index]
+    u_prices = [float(x) for x in u.values]
+
+    trades, liquidity_skips = [], 0
+    step = p.entry_every_days if p.entry_every_days > 0 else 1
+    i = 0
+    while i < len(calendar):
+        entry = calendar[i]
+        spot = _asof_price(u_dates, u_prices, entry)
+        if spot is None or spot <= 0:
+            i += step
+            continue
+        cands = by_date[entry]
+        lo = (pd.Timestamp(entry) + pd.Timedelta(days=p.dte_min)).date()
+        hi = (pd.Timestamp(entry) + pd.Timedelta(days=p.dte_max)).date()
+        cands = cands[(cands["expiry"] >= lo) & (cands["expiry"] <= hi)
+                      & (cands["strike"] >= spot)]  # OTM calls only
+        if cands.empty:
+            i += step
+            continue
+        if p.min_contract_volume > 0:
+            liquid = cands[cands["volume"].fillna(0) >= p.min_contract_volume]
+            if liquid.empty:
+                liquidity_skips += 1
+                i += step
+                continue
+            cands = liquid
+
+        target = spot * p.target_moneyness
+        pick = cands.iloc[(cands["strike"] - target).abs().argmin()]
+        strike, expiry = float(pick["strike"]), pick["expiry"]
+        bid = pick.get("bid")
+        if p.use_bid_ask and bid is not None and not pd.isna(bid) and float(bid) > 0:
+            premium, fill = float(bid), "bid"
+        else:
+            premium, fill = float(pick["close"]) * (1.0 - p.slippage_frac), "close-slippage"
+        entry_volume = pick["volume"]
+
+        s_exp = _asof_price(u_dates, u_prices, expiry)
+        if s_exp is None:
+            break
+        called_away = s_exp > strike
+        commissions = p.commission_per_contract * (2 if called_away else 1)
+        days_held = max((expiry - entry).days, 0)
+        interest = 0.0  # covered call capital is in shares, not cash collateral
+        # per-share: stock marked at min(S_exp, strike) (called away at strike) minus basis, + premium
+        pnl = (min(s_exp, strike) - spot + premium) * 100.0 - commissions + interest
+        collateral = spot * 100.0
+        ret = pnl / collateral
+        trades.append({
+            "entry": entry, "expiry": expiry, "spot": round(spot, 2), "strike": strike,
+            "premium": round(premium, 4), "underlying_at_expiry": round(s_exp, 2),
+            "assigned": called_away, "entry_volume": (None if pd.isna(entry_volume) else int(entry_volume)),
+            "fill": fill, "pnl": round(pnl, 2), "return": ret,
+        })
+        i = (i + step) if p.entry_every_days > 0 else bisect.bisect_right(calendar, expiry)
+
+    returns, metrics = _summarize(trades, p, liquidity_skips, u_dates, u_prices)
     return CSPResult(trades=trades, returns=returns, metrics=metrics)

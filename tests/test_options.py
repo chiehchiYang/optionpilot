@@ -5,7 +5,11 @@ from datetime import date
 import pandas as pd
 import pytest
 
-from optionpilot.backtest.strategies import CSPParams, cash_secured_put_backtest
+from optionpilot.backtest.strategies import (
+    CSPParams,
+    cash_secured_put_backtest,
+    covered_call_backtest,
+)
 from optionpilot.data.osi import parse_osi, try_parse_osi
 from optionpilot.signals import daily_put_call_ratio, unusual_volume
 
@@ -85,6 +89,34 @@ def test_csp_put_assigned_takes_loss():
     # (0.19 - 0.5)*100 - 2*0.65 = -31 - 1.3 = -32.3
     assert t["pnl"] == pytest.approx(-32.3, abs=1e-6)
     assert res.metrics["worst_trade"] < 0
+
+
+def _cc_inputs(s_expiry):
+    opt = pd.DataFrame([{
+        "date": date(2024, 1, 2), "contract": "C55", "expiry": date(2024, 2, 1),
+        "strike": 5.5, "kind": "C", "close": 0.25, "bid": 0.20, "volume": 100,
+    }])
+    under = pd.Series({date(2024, 1, 2): 5.0, date(2024, 2, 1): s_expiry})
+    return opt, under
+
+
+def test_covered_call_not_called_keeps_stock_gain_plus_premium():
+    opt, u = _cc_inputs(s_expiry=5.2)  # 5.2 < strike 5.5 -> not called away
+    res = covered_call_backtest(opt, u, CSPParams(target_moneyness=1.05))
+    t = res.trades[0]
+    assert t["assigned"] is False  # not called
+    # (min(5.2,5.5) - 5.0 + 0.20)*100 - 0.65 = 40 - 0.65 = 39.35
+    assert t["pnl"] == pytest.approx(39.35, abs=1e-6)
+    assert t["fill"] == "bid"
+
+
+def test_covered_call_called_away_caps_upside():
+    opt, u = _cc_inputs(s_expiry=6.0)  # 6.0 > strike 5.5 -> called away, upside capped at 5.5
+    res = covered_call_backtest(opt, u, CSPParams(target_moneyness=1.05))
+    t = res.trades[0]
+    assert t["assigned"] is True
+    # (5.5 - 5.0 + 0.20)*100 - 2*0.65 = 70 - 1.3 = 68.7  (not the full 6.0 move)
+    assert t["pnl"] == pytest.approx(68.7, abs=1e-6)
 
 
 def test_csp_no_candidates_returns_empty():

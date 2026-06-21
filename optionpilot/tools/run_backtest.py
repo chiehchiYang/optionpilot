@@ -7,7 +7,11 @@ including the buy-and-hold benchmark so a good win-rate can't hide underperforma
 
 from __future__ import annotations
 
-from optionpilot.backtest.strategies import CSPParams, cash_secured_put_backtest
+from optionpilot.backtest.strategies import (
+    CSPParams,
+    cash_secured_put_backtest,
+    covered_call_backtest,
+)
 from optionpilot.config import Config
 from optionpilot.data.market import load_option_chain, load_underlying
 from optionpilot.tools.base import ToolSpec
@@ -20,10 +24,12 @@ PARAMETERS = {
         "ticker": {"type": "string", "description": "Underlying ticker, e.g. ZETA"},
         "start": {"type": "string", "description": "ISO date, e.g. 2023-01-01"},
         "end": {"type": "string", "description": "ISO date, e.g. 2025-01-01"},
-        "strategy": {"type": "string", "enum": ["cash_secured_put"],
+        "strategy": {"type": "string", "enum": ["cash_secured_put", "covered_call"],
                      "default": "cash_secured_put"},
-        "target_moneyness": {"type": "number", "default": 0.95,
-                             "description": "Sell put strike ~ this fraction of spot (OTM)."},
+        "target_moneyness": {"type": "number",
+                             "description": "Strike as a fraction of spot. Puts: <1 OTM "
+                             "(e.g. 0.95). Covered calls: >1 OTM (e.g. 1.05). Defaults per "
+                             "strategy if omitted."},
         "dte_min": {"type": "integer", "default": 25},
         "dte_max": {"type": "integer", "default": 45},
         "min_contract_volume": {"type": "integer", "default": 10,
@@ -44,10 +50,14 @@ PARAMETERS = {
 
 def build(config: Config, approve_spend=None) -> ToolSpec:
     def handler(ticker, start, end, strategy="cash_secured_put",
-                target_moneyness=0.95, dte_min=25, dte_max=45,
+                target_moneyness=None, dte_min=25, dte_max=45,
                 min_contract_volume=10, risk_free_rate=0.0, entry_every_days=0):
-        if strategy != "cash_secured_put":
+        backtests = {"cash_secured_put": cash_secured_put_backtest,
+                     "covered_call": covered_call_backtest}
+        if strategy not in backtests:
             return {"error": f"unsupported strategy: {strategy}"}
+        if target_moneyness is None:
+            target_moneyness = 1.05 if strategy == "covered_call" else 0.95
         from optionpilot.data.databento_fetcher import CostGuardError, FetchDenied
         try:
             opt = load_option_chain(config, ticker, start, end, approve=approve_spend)
@@ -57,7 +67,7 @@ def build(config: Config, approve_spend=None) -> ToolSpec:
         params = CSPParams(target_moneyness=target_moneyness, dte_min=dte_min, dte_max=dte_max,
                            min_contract_volume=min_contract_volume, risk_free_rate=risk_free_rate,
                            entry_every_days=entry_every_days)
-        res = cash_secured_put_backtest(opt, under, params)
+        res = backtests[strategy](opt, under, params)
         if not res.metrics:
             return {"ticker": ticker, "n_trades": 0, "note": "no trades generated for these params"}
         m = {k: (round(v, 4) if isinstance(v, float) else v) for k, v in res.metrics.items()}
