@@ -111,6 +111,29 @@ def test_csp_liquidity_filter_picks_liquid_contract():
     assert r1.metrics["median_entry_volume"] == 100.0
 
 
+def test_csp_entry_cadence_generates_more_trades():
+    # 60 DAILY entries, each a 30-day OTM put. Sequential (jump past expiry) opens ~2;
+    # cadence every 5 trading days opens many more (overlapping samples).
+    import pandas as pd
+    from datetime import timedelta
+    rows, u = [], {}
+    d0 = date(2024, 1, 1)
+    for k in range(60):
+        entry = d0 + timedelta(days=k)
+        rows.append({"date": entry, "contract": f"P{k}", "expiry": entry + timedelta(days=30),
+                     "strike": 95.0, "kind": "P", "close": 1.0, "volume": 100})
+    cur, last = d0, d0 + timedelta(days=95)
+    while cur <= last:
+        u[cur] = 100.0          # flat underlying, puts expire OTM (keep premium)
+        cur += timedelta(days=1)
+    opt = pd.DataFrame(rows)
+    under = pd.Series(u).sort_index()
+    seq = cash_secured_put_backtest(opt, under, CSPParams(entry_every_days=0))
+    wk = cash_secured_put_backtest(opt, under, CSPParams(entry_every_days=5))
+    assert wk.metrics["n_trades"] > seq.metrics["n_trades"]
+    assert wk.metrics["overlapping_samples"] is True
+
+
 def test_csp_collateral_interest_adds_return():
     opt, u = _csp_inputs(s_expiry=5.5)  # worthless put, base pnl 18.35
     r0 = cash_secured_put_backtest(opt, u, CSPParams())

@@ -32,6 +32,11 @@ PARAMETERS = {
         "risk_free_rate": {"type": "number", "default": 0.0,
                            "description": "Annual rate earned on cash collateral, e.g. 0.05; "
                            "0 ignores it (understates a cash-secured put's real return)."},
+        "entry_every_days": {"type": "integer", "default": 0,
+                             "description": "0 = sequential non-overlapping (clean metrics, "
+                             "default). >0 opens a new position every N trading days (overlapping "
+                             "sampling, ~5=weekly) for more trades on short histories — but the "
+                             "annualized Sharpe becomes inflated/unreliable under overlap."},
     },
     "required": ["ticker", "start", "end"],
 }
@@ -40,7 +45,7 @@ PARAMETERS = {
 def build(config: Config, approve_spend=None) -> ToolSpec:
     def handler(ticker, start, end, strategy="cash_secured_put",
                 target_moneyness=0.95, dte_min=25, dte_max=45,
-                min_contract_volume=10, risk_free_rate=0.0):
+                min_contract_volume=10, risk_free_rate=0.0, entry_every_days=0):
         if strategy != "cash_secured_put":
             return {"error": f"unsupported strategy: {strategy}"}
         from optionpilot.data.databento_fetcher import CostGuardError, FetchDenied
@@ -50,7 +55,8 @@ def build(config: Config, approve_spend=None) -> ToolSpec:
             return {"ticker": ticker.upper(), "ran": False, "reason": str(e)}
         under = load_underlying(ticker, start, end)
         params = CSPParams(target_moneyness=target_moneyness, dte_min=dte_min, dte_max=dte_max,
-                           min_contract_volume=min_contract_volume, risk_free_rate=risk_free_rate)
+                           min_contract_volume=min_contract_volume, risk_free_rate=risk_free_rate,
+                           entry_every_days=entry_every_days)
         res = cash_secured_put_backtest(opt, under, params)
         if not res.metrics:
             return {"ticker": ticker, "n_trades": 0, "note": "no trades generated for these params"}
@@ -61,7 +67,8 @@ def build(config: Config, approve_spend=None) -> ToolSpec:
         # auto-save: log to the experiment DB + write a Markdown report under runs/
         run_params = {"target_moneyness": target_moneyness, "dte_min": dte_min,
                       "dte_max": dte_max, "min_contract_volume": min_contract_volume,
-                      "risk_free_rate": risk_free_rate, "start": start, "end": end}
+                      "risk_free_rate": risk_free_rate, "entry_every_days": entry_every_days,
+                      "start": start, "end": end}
         config.ensure_dirs()
         tracker = ExperimentTracker(config.runs_dir / "experiments.duckdb")
         run_id = tracker.log_run(ticker, strategy, run_params, res.metrics)

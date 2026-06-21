@@ -33,7 +33,11 @@ class CSPParams:
     min_premium: float = 0.01               # ignore untradeable near-zero quotes
     min_contract_volume: int = 0            # require >= this day's volume to count as fillable
     risk_free_rate: float = 0.0             # annual rate earned on cash collateral (Step 2)
-    cycles_per_year: float = 12.0           # for annualizing the (roughly monthly) cycles
+    cycles_per_year: float = 12.0           # for annualizing; auto-set when entry_every_days>0
+    # Entry cadence. 0 = sequential non-overlapping (enter the next position only after the
+    # previous expires). >0 = open a new position every N trading days (overlapping allowed) —
+    # a sampling study that yields many more trades on short/active histories.
+    entry_every_days: int = 0
 
 
 @dataclass
@@ -81,12 +85,13 @@ def cash_secured_put_backtest(
 
     trades: list[dict] = []
     liquidity_skips = 0
+    step = p.entry_every_days if p.entry_every_days > 0 else 1
     i = 0
     while i < len(calendar):
         entry = calendar[i]
         spot = _asof_price(u_dates, u_prices, entry)
         if spot is None or spot <= 0:
-            i += 1
+            i += step
             continue
 
         cands = by_date[entry]
@@ -95,7 +100,7 @@ def cash_secured_put_backtest(
         cands = cands[(cands["expiry"] >= lo) & (cands["expiry"] <= hi)
                       & (cands["strike"] <= spot)]  # OTM puts only
         if cands.empty:
-            i += 1
+            i += step
             continue
 
         # liquidity filter: only count contracts you could plausibly fill that day
@@ -103,7 +108,7 @@ def cash_secured_put_backtest(
             liquid = cands[cands["volume"].fillna(0) >= p.min_contract_volume]
             if liquid.empty:
                 liquidity_skips += 1
-                i += 1
+                i += step
                 continue
             cands = liquid
 
@@ -132,23 +137,26 @@ def cash_secured_put_backtest(
             "pnl": round(pnl, 2), "return": ret,
         })
 
-        # next cycle: first trading day strictly after expiry
-        i = bisect.bisect_right(calendar, expiry)
+        # advance: by cadence (overlap allowed) or, sequentially, to past this expiry
+        i = (i + step) if p.entry_every_days > 0 else bisect.bisect_right(calendar, expiry)
 
     returns = np.array([t["return"] for t in trades], dtype=float)
     metrics = {}
     if returns.size:
         total_return = float(np.prod(1.0 + returns) - 1.0)
         entry_vols = [t["entry_volume"] for t in trades if t["entry_volume"] is not None]
+        # annualize per-trade returns: cadence frequency if overlapping, else monthly-ish
+        cpy = (252.0 / p.entry_every_days) if p.entry_every_days > 0 else p.cycles_per_year
         metrics = {
             "n_trades": int(returns.size),
             "win_rate": win_rate(returns),
             "assigned_rate": float(np.mean([t["assigned"] for t in trades])),
-            "mean_cycle_return": float(returns.mean()),
+            "mean_trade_return": float(returns.mean()),
             "total_return": total_return,
-            "sharpe_annualized": sharpe_ratio(returns, periods=p.cycles_per_year),
+            "sharpe_annualized": sharpe_ratio(returns, periods=cpy),
             "max_drawdown": max_drawdown(returns),
             "worst_trade": float(returns.min()),
+            "overlapping_samples": p.entry_every_days > 0,
             "liquidity_skips": liquidity_skips,
             "median_entry_volume": (float(np.median(entry_vols)) if entry_vols else None),
         }
