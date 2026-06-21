@@ -20,6 +20,7 @@ gracefully (e.g. the unusual-volume signal needs `volume`).
 
 from __future__ import annotations
 
+import hashlib
 import json
 from abc import ABC, abstractmethod
 from datetime import date, timedelta
@@ -112,9 +113,15 @@ class ThetaDataSource(OptionDataSource):
     def __init__(self, config: Config):
         self.config = config
         self.base = config.thetadata_url.rstrip("/")
+        self.cache_dir = config.cache_dir / "thetadata"
 
     def fetch_chain(self, ticker: str, start: str, end: str, approve=None) -> pd.DataFrame:
         import requests
+
+        key = hashlib.sha1(f"{ticker.upper()}|{start}|{end}".encode()).hexdigest()[:16]
+        path = self.cache_dir / f"{key}.parquet"
+        if path.exists():  # free + local, but slow (1 concurrent) — cache so tools reuse it
+            return _ensure_date_cols(pd.read_parquet(path))
 
         url = f"{self.base}/v3/option/history/eod"
         rows: list[dict] = []
@@ -124,7 +131,18 @@ class ThetaDataSource(OptionDataSource):
             r = requests.get(url, params=params, timeout=300)
             r.raise_for_status()
             rows.extend(json.loads(line) for line in r.text.splitlines() if line.strip())
-        return _normalize_thetadata(rows)
+        df = _normalize_thetadata(rows)
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        df.to_parquet(path)
+        return df
+
+
+def _ensure_date_cols(df: pd.DataFrame) -> pd.DataFrame:
+    """Parquet may round-trip date columns to datetime64; coerce back to python date."""
+    for col in ("date", "expiry"):
+        if col in df.columns and len(df) and not isinstance(df[col].iloc[0], date):
+            df[col] = pd.to_datetime(df[col]).dt.date
+    return df
 
 
 def _date_chunks(start: str, end: str, max_days: int = 365):
