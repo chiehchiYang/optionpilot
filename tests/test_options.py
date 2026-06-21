@@ -24,13 +24,11 @@ def test_parse_osi_malformed():
     assert try_parse_osi("garbage") is None
 
 
-# --- unusual activity --------------------------------------------------------
+# --- unusual activity (normalized schema) ------------------------------------
 def _vol_frame():
-    sym = "NOK   240201P00004500"
-    rows = [{"date": date(2024, 1, d), "symbol": sym, "volume": v}
+    rows = [{"date": date(2024, 1, d), "contract": "PUT1", "kind": "P", "volume": v}
             for d, v in zip(range(2, 12), [10, 12, 9, 11, 8, 10, 13, 9, 10, 300])]
-    # add a few call rows for the put/call ratio test
-    rows += [{"date": date(2024, 1, 2), "symbol": "NOK   240201C00006000", "volume": 50}]
+    rows += [{"date": date(2024, 1, 2), "contract": "CALL1", "kind": "C", "volume": 50}]
     return pd.DataFrame(rows)
 
 
@@ -47,10 +45,17 @@ def test_put_call_ratio():
     assert row["put_call_ratio"] == pytest.approx(0.2)
 
 
-# --- cash-secured put backtest ----------------------------------------------
+def test_unusual_volume_no_volume_column_is_empty():
+    # a source without volume (e.g. DoltHub) -> no flags, no crash
+    df = pd.DataFrame([{"date": date(2024, 1, 2), "contract": "X", "kind": "P", "volume": float("nan")}])
+    assert unusual_volume(df).empty
+
+
+# --- cash-secured put backtest (normalized schema) ---------------------------
 def _csp_inputs(s_expiry):
     opt = pd.DataFrame([{
-        "date": date(2024, 1, 2), "symbol": "NOK   240201P00004500",
+        "date": date(2024, 1, 2), "contract": "NOK240201P4500",
+        "expiry": date(2024, 2, 1), "strike": 4.5, "kind": "P",
         "close": 0.20, "volume": 100,
     }])
     underlying = pd.Series({date(2024, 1, 2): 5.0, date(2024, 2, 1): s_expiry})

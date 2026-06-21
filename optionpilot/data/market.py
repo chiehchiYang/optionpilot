@@ -1,7 +1,7 @@
-"""Convenience loaders that the agent tools use: option chain + underlying price series.
+"""Convenience loaders the agent tools use: option chain (via a DataSource) + underlying.
 
-Keeps the tools thin and self-contained — each tool takes a ticker + dates and loads what it
-needs (cached option chain via Databento, underlying closes via yfinance).
+Keeps tools thin: each takes a ticker + dates and gets a normalized option chain from the
+configured/selected DataSource, and underlying closes from yfinance.
 """
 
 from __future__ import annotations
@@ -9,17 +9,14 @@ from __future__ import annotations
 import pandas as pd
 
 from optionpilot.config import Config
-from optionpilot.data.databento_fetcher import DatabentoFetcher
+from optionpilot.data.sources import get_source
 
 
 def load_option_chain(
-    config: Config, ticker: str, start: str, end: str, schema: str = "ohlcv-1d"
+    config: Config, ticker: str, start: str, end: str, source: str | None = None
 ) -> pd.DataFrame:
-    """Load the daily option-chain bars for a ticker (cache-aware, cost-guarded)."""
-    parent = ticker if ticker.endswith(".OPT") else f"{ticker.upper()}.OPT"
-    return DatabentoFetcher(config).fetch(
-        symbols=[parent], schema=schema, start=start, end=end, stype_in="parent"
-    )
+    """Load normalized daily option-chain bars for a ticker from the chosen DataSource."""
+    return get_source(config, source).fetch_chain(ticker, start, end)
 
 
 def load_underlying(ticker: str, start: str, end: str) -> pd.Series:

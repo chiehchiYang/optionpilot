@@ -32,7 +32,7 @@ def build(config: Config) -> ToolSpec:
         ua = unusual_volume(opt, ratio_threshold=ratio_threshold, min_volume=min_volume)
         pcr = daily_put_call_ratio(opt)
         top = [
-            {"date": str(r["date"]), "symbol": r["symbol"].strip(),
+            {"date": str(r["date"]), "contract": str(r["contract"]).strip(),
              "volume": int(r["volume"]), "avg_volume": round(float(r["avg_volume"]), 1),
              "ratio": round(float(r["ratio"]), 1)}
             for _, r in ua.head(top_n).iterrows()

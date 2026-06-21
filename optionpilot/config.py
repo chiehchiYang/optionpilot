@@ -24,6 +24,7 @@ class Config:
 
     # Data
     databento_api_key: str | None = None
+    data_source: str = "databento"  # which OptionDataSource to use
 
     # Cost guard: abort a Databento fetch whose estimated cost exceeds this (USD).
     max_fetch_usd: float = 5.0
@@ -45,6 +46,7 @@ class Config:
             api_base=os.getenv("OPTIONPILOT_API_BASE") or None,
             api_key=os.getenv("OPTIONPILOT_API_KEY") or None,
             databento_api_key=os.getenv("DATABENTO_API_KEY") or None,
+            data_source=os.getenv("OPTIONPILOT_DATA_SOURCE", cls.data_source),
             max_fetch_usd=float(os.getenv("OPTIONPILOT_MAX_FETCH_USD", cls.max_fetch_usd)),
             cache_dir=Path(os.getenv("OPTIONPILOT_CACHE_DIR", str(cls.cache_dir))),
             runs_dir=Path(os.getenv("OPTIONPILOT_RUNS_DIR", str(cls.runs_dir))),

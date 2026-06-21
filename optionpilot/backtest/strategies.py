@@ -21,7 +21,6 @@ import numpy as np
 import pandas as pd
 
 from optionpilot.backtest.metrics import max_drawdown, sharpe_ratio, win_rate
-from optionpilot.data.osi import try_parse_osi
 
 
 @dataclass
@@ -55,23 +54,13 @@ def cash_secured_put_backtest(
 ) -> CSPResult:
     """Backtest systematic cash-secured put writing.
 
-    opt_df: option daily bars with a datetime index (or `date`/`ts_event` column), and columns
-        `symbol` (OSI), `close`, `volume`.
+    opt_df: normalized option chain (see data.sources) with columns
+        `date`, `expiry`, `strike`, `kind`, `close`.
     underlying: Series indexed by date -> underlying close price.
     """
     p = params or CSPParams()
 
-    # --- normalize option rows to puts with parsed (date, strike, expiry, close) ---
-    d = opt_df.reset_index()
-    if "date" not in d.columns:
-        tcol = next((c for c in ("ts_event", "ts_recv", "index") if c in d.columns), d.columns[0])
-        d["date"] = pd.to_datetime(d[tcol]).dt.date
-    parsed = d["symbol"].map(try_parse_osi)
-    d = d.assign(
-        kind=parsed.map(lambda c: c.kind if c else None),
-        strike=parsed.map(lambda c: c.strike if c else None),
-        expiry=parsed.map(lambda c: c.expiry if c else None),
-    )
+    d = opt_df
     puts = d[(d["kind"] == "P") & d["close"].notna() & (d["close"] >= p.min_premium)]
     puts = puts[["date", "strike", "expiry", "close"]].dropna()
     if puts.empty:
