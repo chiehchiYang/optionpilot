@@ -15,7 +15,7 @@ PARAMETERS = {
 }
 
 
-def build(config: Config) -> ToolSpec:
+def build(config: Config, approve_spend=None) -> ToolSpec:
     def handler(ticker=None, limit=20):
         db = config.runs_dir / "experiments.duckdb"
         if not db.exists():

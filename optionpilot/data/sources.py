@@ -39,8 +39,11 @@ class OptionDataSource(ABC):
     name: str = "abstract"
 
     @abstractmethod
-    def fetch_chain(self, ticker: str, start: str, end: str) -> pd.DataFrame:
-        """Return daily option-chain bars for `ticker` in the normalized schema."""
+    def fetch_chain(self, ticker: str, start: str, end: str, approve=None) -> pd.DataFrame:
+        """Return daily option-chain bars for `ticker` in the normalized schema.
+
+        `approve(message, usd) -> bool` is consulted only when a paid download is needed
+        (free sources / cache hits never call it)."""
 
     def estimate_usd(self, ticker: str, start: str, end: str) -> float | None:
         """Estimated cost in USD, or None for free sources."""
@@ -66,9 +69,9 @@ class DatabentoSource(OptionDataSource):
             start=start, end=end, stype_in="parent",
         ).usd
 
-    def fetch_chain(self, ticker: str, start: str, end: str) -> pd.DataFrame:
+    def fetch_chain(self, ticker: str, start: str, end: str, approve=None) -> pd.DataFrame:
         raw = self.fetcher.fetch(symbols=[self._parent(ticker)], schema="ohlcv-1d",
-                                 start=start, end=end, stype_in="parent")
+                                 start=start, end=end, stype_in="parent", approve=approve)
         return _normalize_databento(raw)
 
 

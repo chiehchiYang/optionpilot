@@ -21,13 +21,16 @@ _BUILDERS = [
 ]
 
 
-def default_tools(config: Config) -> list[ToolSpec]:
-    """Instantiate the core tools bound to the given config."""
-    return [build(config) for build in _BUILDERS]
+def default_tools(config: Config, approve_spend=None) -> list[ToolSpec]:
+    """Instantiate the core tools bound to the given config.
+
+    approve_spend(message, usd) -> bool is consulted by data tools only when a paid download
+    is about to happen (estimates and cache hits never prompt)."""
+    return [build(config, approve_spend=approve_spend) for build in _BUILDERS]
 
 
-def register_default_tools(router, config: Config) -> None:
-    for spec in default_tools(config):
+def register_default_tools(router, config: Config, approve_spend=None) -> None:
+    for spec in default_tools(config, approve_spend=approve_spend):
         router.register(spec)
 
 

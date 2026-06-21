@@ -26,9 +26,13 @@ PARAMETERS = {
 }
 
 
-def build(config: Config) -> ToolSpec:
+def build(config: Config, approve_spend=None) -> ToolSpec:
     def handler(ticker, start, end, ratio_threshold=5.0, min_volume=200, top_n=10):
-        opt = load_option_chain(config, ticker, start, end)
+        from optionpilot.data.databento_fetcher import CostGuardError, FetchDenied
+        try:
+            opt = load_option_chain(config, ticker, start, end, approve=approve_spend)
+        except (FetchDenied, CostGuardError) as e:
+            return {"ticker": ticker.upper(), "ran": False, "reason": str(e)}
         ua = unusual_volume(opt, ratio_threshold=ratio_threshold, min_volume=min_volume)
         pcr = daily_put_call_ratio(opt)
         top = [

@@ -12,6 +12,7 @@ from optionpilot.data.databento_fetcher import (
     CostEstimate,
     CostGuardError,
     DatabentoFetcher,
+    FetchDenied,
 )
 
 ARGS = dict(symbols=["SPY"], schema="ohlcv-1m", start="2024-01-02", end="2024-01-03")
@@ -100,3 +101,32 @@ def test_missing_args_raises(tmp_path):
     f = _fetcher(tmp_path)
     with pytest.raises(ValueError):
         f.fetch(symbols=[], schema="ohlcv-1m", start="2024-01-02", end="2024-01-03")
+
+
+def test_approve_only_consulted_on_real_download(tmp_path):
+    f = _fetcher(tmp_path)
+    f._get_cost = lambda *a, **k: CostEstimate(usd=0.5)
+    f._download = lambda *a, **k: _fake_df()
+    calls = {"n": 0}
+
+    def approve(message, usd):
+        calls["n"] += 1
+        return True
+
+    f.fetch(**ARGS, approve=approve)        # real download -> consults approve once
+    assert calls["n"] == 1
+    f.fetch(**ARGS, approve=approve)        # cache hit -> must NOT consult approve
+    assert calls["n"] == 1
+
+
+def test_approve_denied_raises_fetchdenied_and_no_download(tmp_path):
+    f = _fetcher(tmp_path)
+    f._get_cost = lambda *a, **k: CostEstimate(usd=0.5)
+
+    def _no_download(*a, **k):
+        raise AssertionError("must not download when denied")
+
+    f._download = _no_download
+    with pytest.raises(FetchDenied):
+        f.fetch(**ARGS, approve=lambda message, usd: False)
+    assert not any(tmp_path.rglob("*.parquet"))

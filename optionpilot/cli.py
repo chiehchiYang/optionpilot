@@ -14,7 +14,7 @@ import typer
 from rich.console import Console
 
 from optionpilot import __version__
-from optionpilot.agent.approval import auto_approve, interactive_approval
+from optionpilot.agent.approval import auto_spend, interactive_spend
 from optionpilot.agent.loop import ExperimentLoop
 from optionpilot.agent.router import ToolRouter
 from optionpilot.config import Config
@@ -25,9 +25,11 @@ console = Console()
 
 
 def _build_loop(config: Config, auto: bool) -> ExperimentLoop:
-    approval = auto_approve if auto else interactive_approval
-    router = ToolRouter(approval_fn=approval)
-    register_default_tools(router, config)
+    # Approval is consulted only at the point of a paid download (estimates / cache hits are
+    # free and never prompt). --auto-approve allows; otherwise the user confirms each purchase.
+    approve_spend = auto_spend if auto else interactive_spend
+    router = ToolRouter()  # tool-level gating unused; spend approval lives in the data layer
+    register_default_tools(router, config, approve_spend=approve_spend)
     return ExperimentLoop(config=config, router=router)
 
 

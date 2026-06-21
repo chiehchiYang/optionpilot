@@ -37,13 +37,17 @@ PARAMETERS = {
 }
 
 
-def build(config: Config) -> ToolSpec:
+def build(config: Config, approve_spend=None) -> ToolSpec:
     def handler(ticker, start, end, strategy="cash_secured_put",
                 target_moneyness=0.95, dte_min=25, dte_max=45,
                 min_contract_volume=10, risk_free_rate=0.0):
         if strategy != "cash_secured_put":
             return {"error": f"unsupported strategy: {strategy}"}
-        opt = load_option_chain(config, ticker, start, end)
+        from optionpilot.data.databento_fetcher import CostGuardError, FetchDenied
+        try:
+            opt = load_option_chain(config, ticker, start, end, approve=approve_spend)
+        except (FetchDenied, CostGuardError) as e:
+            return {"ticker": ticker.upper(), "ran": False, "reason": str(e)}
         under = load_underlying(ticker, start, end)
         params = CSPParams(target_moneyness=target_moneyness, dte_min=dte_min, dte_max=dte_max,
                            min_contract_volume=min_contract_volume, risk_free_rate=risk_free_rate)

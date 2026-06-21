@@ -30,3 +30,18 @@ def interactive_approval(spec: ToolSpec, args: dict[str, Any]) -> bool:
     print(f"   args: {args}")
     reply = input("   Allow? [y/N] ").strip().lower()
     return reply in ("y", "yes")
+
+
+# --- spend approval: consulted ONLY when a paid download is about to happen ---------------
+def auto_spend(message: str, usd: float) -> bool:
+    return True
+
+
+def interactive_spend(message: str, usd: float) -> bool:
+    """Prompt to approve an actual data purchase, showing the real cost. No-tty -> deny."""
+    if not sys.stdin.isatty():
+        print(f"⚠  Would spend ${usd:.4f} on data ({message}) but there is no interactive "
+              "terminal; denying. Re-run with --auto-approve to allow.")
+        return False
+    print(f"\n💲 Fetch from Databento — estimated ${usd:.4f}: {message}")
+    return input("   Approve purchase? [y/N] ").strip().lower() in ("y", "yes")

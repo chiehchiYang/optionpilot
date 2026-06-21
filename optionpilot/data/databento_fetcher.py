@@ -43,6 +43,14 @@ class CostGuardError(RuntimeError):
         )
 
 
+class FetchDenied(RuntimeError):
+    """Raised when the user declines to approve a paid download."""
+
+    def __init__(self, message: str, usd: float):
+        self.usd = usd
+        super().__init__(f"DENIED: user declined the ${usd:.4f} fetch — {message}")
+
+
 class DatabentoFetcher:
     DATASET = "OPRA.PILLAR"
 
@@ -113,11 +121,14 @@ class DatabentoFetcher:
         stype_in: str = "parent",
         force: bool = False,
         override_guard: bool = False,
+        approve=None,
     ) -> pd.DataFrame:
         """Cache-aware fetch behind the cost guard.
 
-        Flow: cache hit (unless force) -> return. Else estimate -> guard -> download ->
-        cache -> return. Raises CostGuardError if the estimate exceeds the budget.
+        Flow: cache hit (unless force) -> return free. Else estimate -> guard -> (approve) ->
+        download -> cache -> return. `approve(message, usd) -> bool` is consulted ONLY when a
+        real (paid) download is about to happen — never for cache hits. Raises CostGuardError
+        if over budget, FetchDenied if approval is declined.
         """
         if not symbols or not start or not end:
             raise ValueError("symbols, start and end are required")
@@ -125,11 +136,16 @@ class DatabentoFetcher:
         key = self._cache_key(symbols, schema, start, end, stype_in)
         path = self._cache_path(key)
         if path.exists() and not force:
-            return pd.read_parquet(path)
+            return pd.read_parquet(path)  # free: no estimate, no approval
 
         estimate = self.estimate_cost(symbols, schema, start, end, stype_in)
         if not override_guard and estimate.usd > self.config.max_fetch_usd:
             raise CostGuardError(estimate, self.config.max_fetch_usd)
+
+        if approve is not None:
+            message = f"{','.join(symbols)} {schema} {start}..{end}"
+            if not approve(message, estimate.usd):
+                raise FetchDenied(message, estimate.usd)
 
         df = self._download(symbols, schema, start, end, stype_in)
         self.cache_dir.mkdir(parents=True, exist_ok=True)

@@ -13,10 +13,12 @@ from optionpilot.data.sources import get_source
 
 
 def load_option_chain(
-    config: Config, ticker: str, start: str, end: str, source: str | None = None
+    config: Config, ticker: str, start: str, end: str, source: str | None = None, approve=None
 ) -> pd.DataFrame:
-    """Load normalized daily option-chain bars for a ticker from the chosen DataSource."""
-    return get_source(config, source).fetch_chain(ticker, start, end)
+    """Load normalized daily option-chain bars for a ticker from the chosen DataSource.
+
+    `approve(message, usd) -> bool` is consulted only if a paid download is needed."""
+    return get_source(config, source).fetch_chain(ticker, start, end, approve=approve)
 
 
 def load_underlying(ticker: str, start: str, end: str) -> pd.Series:

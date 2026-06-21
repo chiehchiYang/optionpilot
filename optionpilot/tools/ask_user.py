@@ -22,7 +22,7 @@ PARAMETERS = {
 }
 
 
-def build(config: Config) -> ToolSpec:
+def build(config: Config, approve_spend=None) -> ToolSpec:
     def handler(question):
         if not sys.stdin.isatty():
             return ("NO_INTERACTIVE_TERMINAL: proceed with sensible defaults and state your "
