@@ -49,7 +49,9 @@ def main(
         config = Config.load().__class__(**{**config.__dict__, "model": model})
     config.ensure_dirs()
 
-    loop = _build_loop(config, auto=auto_approve_flag or task is not None)
+    # Money-spending tools always require approval unless --auto-approve is explicitly set
+    # (headless included). Interactive approval is no-tty-safe (denies) so nothing spends silently.
+    loop = _build_loop(config, auto=auto_approve_flag)
 
     if task:
         console.print(loop.run(task))

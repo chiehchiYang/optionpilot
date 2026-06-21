@@ -4,16 +4,20 @@ from __future__ import annotations
 
 from optionpilot.config import Config
 from optionpilot.tools import (
+    ask_user,
     detect_unusual_activity,
     fetch_options_data,
+    list_experiments,
     run_backtest,
 )
 from optionpilot.tools.base import ToolSpec
 
 _BUILDERS = [
+    ask_user.build,
     fetch_options_data.build,
     run_backtest.build,
     detect_unusual_activity.build,
+    list_experiments.build,
 ]
 
 

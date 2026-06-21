@@ -11,6 +11,8 @@ from optionpilot.backtest.strategies import CSPParams, cash_secured_put_backtest
 from optionpilot.config import Config
 from optionpilot.data.market import load_option_chain, load_underlying
 from optionpilot.tools.base import ToolSpec
+from optionpilot.tracking import ExperimentTracker
+from optionpilot.tracking.report import write_backtest_report
 
 PARAMETERS = {
     "type": "object",
@@ -43,6 +45,17 @@ def build(config: Config) -> ToolSpec:
         m = {k: (round(v, 4) if isinstance(v, float) else v) for k, v in res.metrics.items()}
         m["ticker"] = ticker.upper()
         m["strategy"] = strategy
+
+        # auto-save: log to the experiment DB + write a Markdown report under runs/
+        run_params = {"target_moneyness": target_moneyness, "dte_min": dte_min,
+                      "dte_max": dte_max, "start": start, "end": end}
+        config.ensure_dirs()
+        tracker = ExperimentTracker(config.runs_dir / "experiments.duckdb")
+        run_id = tracker.log_run(ticker, strategy, run_params, res.metrics)
+        report = write_backtest_report(config.runs_dir, ticker, strategy, run_params,
+                                       res.metrics, res.trades, run_id, start, end)
+        m["run_id"] = run_id
+        m["report_path"] = str(report)
         return m
 
     return ToolSpec(
