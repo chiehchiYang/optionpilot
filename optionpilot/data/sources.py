@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import json
 from abc import ABC, abstractmethod
-from datetime import date
+from datetime import date, timedelta
 
 import numpy as np
 import pandas as pd
@@ -117,12 +117,24 @@ class ThetaDataSource(OptionDataSource):
         import requests
 
         url = f"{self.base}/v3/option/history/eod"
-        params = {"symbol": ticker.upper(), "expiration": "*",
-                  "start_date": start, "end_date": end, "format": "ndjson"}
-        r = requests.get(url, params=params, timeout=300)
-        r.raise_for_status()
-        rows = [json.loads(line) for line in r.text.splitlines() if line.strip()]
+        rows: list[dict] = []
+        for s, e in _date_chunks(start, end, max_days=365):  # v3 caps a request at 365 days
+            params = {"symbol": ticker.upper(), "expiration": "*",
+                      "start_date": s, "end_date": e, "format": "ndjson"}
+            r = requests.get(url, params=params, timeout=300)
+            r.raise_for_status()
+            rows.extend(json.loads(line) for line in r.text.splitlines() if line.strip())
         return _normalize_thetadata(rows)
+
+
+def _date_chunks(start: str, end: str, max_days: int = 365):
+    """Split [start, end] into consecutive windows of at most `max_days` days each."""
+    s, e = date.fromisoformat(start), date.fromisoformat(end)
+    cur = s
+    while cur <= e:
+        nxt = min(cur + timedelta(days=max_days - 1), e)
+        yield cur.isoformat(), nxt.isoformat()
+        cur = nxt + timedelta(days=1)
 
 
 def _iso_date(s) -> date:

@@ -4,7 +4,19 @@ from datetime import date
 
 import pytest
 
-from optionpilot.data.sources import NORMALIZED_COLUMNS, _normalize_thetadata
+from optionpilot.data.sources import NORMALIZED_COLUMNS, _date_chunks, _normalize_thetadata
+
+
+def test_date_chunks_respects_365_cap():
+    chunks = list(_date_chunks("2024-01-01", "2026-06-18", max_days=365))
+    assert len(chunks) == 3                         # ~2.5yr -> 3 windows
+    assert chunks[0][0] == "2024-01-01"
+    assert chunks[-1][1] == "2026-06-18"
+    # contiguous, non-overlapping, each <= 365 days
+    for (s, e) in chunks:
+        assert (date.fromisoformat(e) - date.fromisoformat(s)).days <= 364
+    for (s1, e1), (s2, e2) in zip(chunks, chunks[1:]):
+        assert (date.fromisoformat(s2) - date.fromisoformat(e1)).days == 1
 
 
 def _row(**kw):

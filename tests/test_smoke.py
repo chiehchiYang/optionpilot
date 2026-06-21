@@ -66,5 +66,5 @@ def test_doom_loop_detects_repetition():
 def test_default_tools_build():
     specs = default_tools(Config.load(dotenv=False))
     names = {s.name for s in specs}
-    assert names == {"ask_user", "fetch_options_data", "run_backtest",
+    assert names == {"ask_user", "fetch_options_data", "run_backtest", "optimize_strategy",
                      "detect_unusual_activity", "measure_vrp", "list_experiments"}
