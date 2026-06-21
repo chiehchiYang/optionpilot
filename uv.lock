@@ -1322,6 +1322,7 @@ dependencies = [
 [package.optional-dependencies]
 data = [
     { name = "databento" },
+    { name = "requests" },
     { name = "yfinance" },
 ]
 dev = [
@@ -1344,6 +1345,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.6" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "python-dotenv", specifier = ">=1.0" },
+    { name = "requests", marker = "extra == 'data'", specifier = ">=2.31" },
     { name = "rich", specifier = ">=13.7" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.5" },
     { name = "scipy", specifier = ">=1.13" },

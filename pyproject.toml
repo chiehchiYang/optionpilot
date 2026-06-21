@@ -21,6 +21,7 @@ dependencies = [
 data = [
     "databento>=0.34",
     "yfinance>=0.2.40",
+    "requests>=2.31",
 ]
 models = [
     "xgboost>=2.0",

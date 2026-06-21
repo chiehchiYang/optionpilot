@@ -20,7 +20,9 @@ gracefully (e.g. the unusual-volume signal needs `volume`).
 
 from __future__ import annotations
 
+import json
 from abc import ABC, abstractmethod
+from datetime import date
 
 import numpy as np
 import pandas as pd
@@ -96,7 +98,69 @@ def _normalize_databento(df: pd.DataFrame) -> pd.DataFrame:
     return out[NORMALIZED_COLUMNS]
 
 
-_SOURCES = {"databento": DatabentoSource}
+class ThetaDataSource(OptionDataSource):
+    """ThetaData free tier — local Theta Terminal v3, EOD options with bid/ask + volume.
+
+    Free and local, so there is no per-call cost (the spend-approval callback is not used).
+    Requires a (free) ThetaData account + the v3 Theta Terminal running locally on port 25503;
+    see docs/thetadata_setup.md. Verified: free tier serves multi-year history with bid/ask +
+    volume, and each bar's `created` timestamp is its trading day.
+    """
+
+    name = "thetadata"
+
+    def __init__(self, config: Config):
+        self.config = config
+        self.base = config.thetadata_url.rstrip("/")
+
+    def fetch_chain(self, ticker: str, start: str, end: str, approve=None) -> pd.DataFrame:
+        import requests
+
+        url = f"{self.base}/v3/option/history/eod"
+        params = {"symbol": ticker.upper(), "expiration": "*",
+                  "start_date": start, "end_date": end, "format": "ndjson"}
+        r = requests.get(url, params=params, timeout=300)
+        r.raise_for_status()
+        rows = [json.loads(line) for line in r.text.splitlines() if line.strip()]
+        return _normalize_thetadata(rows)
+
+
+def _iso_date(s) -> date:
+    return date.fromisoformat(str(s)[:10])
+
+
+def _normalize_thetadata(rows: list[dict]) -> pd.DataFrame:
+    """Map ThetaData v3 option EOD ndjson rows into the normalized schema.
+
+    Strikes are decimal dollars; `right` is CALL/PUT; the bar date is the `created` timestamp's
+    day (verified to equal the trading day, even for history). The daily mark is `close`,
+    falling back to bid/ask mid when the contract did not trade (close == 0).
+    """
+    recs = []
+    for d in rows:
+        bid, ask = d.get("bid"), d.get("ask")
+        close = d.get("close")
+        if (not close) and bid is not None and ask is not None:
+            close = (bid + ask) / 2.0
+        kind = "C" if str(d.get("right", "")).upper().startswith("C") else "P"
+        strike = float(d.get("strike"))
+        recs.append({
+            "date": _iso_date(d.get("created")),
+            "contract": f"{d.get('symbol')}|{d.get('expiration')}|{kind}|{strike}",
+            "expiry": _iso_date(d.get("expiration")),
+            "strike": strike,
+            "kind": kind,
+            "close": close,
+            "volume": d.get("volume"),
+            "bid": bid,
+            "ask": ask,
+            "delta": np.nan,
+            "iv": np.nan,
+        })
+    return pd.DataFrame(recs, columns=NORMALIZED_COLUMNS)
+
+
+_SOURCES = {"databento": DatabentoSource, "thetadata": ThetaDataSource}
 
 
 def get_source(config: Config, name: str | None = None) -> OptionDataSource:
