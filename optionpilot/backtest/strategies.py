@@ -31,6 +31,8 @@ class CSPParams:
     commission_per_contract: float = 0.65   # per leg, per contract (entry + assignment)
     slippage_frac: float = 0.05             # haircut on premium received (bid-ask/slippage)
     min_premium: float = 0.01               # ignore untradeable near-zero quotes
+    min_contract_volume: int = 0            # require >= this day's volume to count as fillable
+    risk_free_rate: float = 0.0             # annual rate earned on cash collateral (Step 2)
     cycles_per_year: float = 12.0           # for annualizing the (roughly monthly) cycles
 
 
@@ -61,8 +63,12 @@ def cash_secured_put_backtest(
     p = params or CSPParams()
 
     d = opt_df
+    cols = ["date", "strike", "expiry", "close", "volume"]
     puts = d[(d["kind"] == "P") & d["close"].notna() & (d["close"] >= p.min_premium)]
-    puts = puts[["date", "strike", "expiry", "close"]].dropna()
+    puts = puts[[c for c in cols if c in puts.columns]].dropna(
+        subset=["date", "strike", "expiry", "close"])
+    if "volume" not in puts.columns:
+        puts = puts.assign(volume=np.nan)
     if puts.empty:
         return CSPResult()
 
@@ -74,6 +80,7 @@ def cash_secured_put_backtest(
     u_prices = [float(x) for x in u.values]
 
     trades: list[dict] = []
+    liquidity_skips = 0
     i = 0
     while i < len(calendar):
         entry = calendar[i]
@@ -91,10 +98,20 @@ def cash_secured_put_backtest(
             i += 1
             continue
 
+        # liquidity filter: only count contracts you could plausibly fill that day
+        if p.min_contract_volume > 0:
+            liquid = cands[cands["volume"].fillna(0) >= p.min_contract_volume]
+            if liquid.empty:
+                liquidity_skips += 1
+                i += 1
+                continue
+            cands = liquid
+
         target = spot * p.target_moneyness
         pick = cands.iloc[(cands["strike"] - target).abs().argmin()]
         strike, expiry = float(pick["strike"]), pick["expiry"]
         premium = float(pick["close"]) * (1.0 - p.slippage_frac)
+        entry_volume = pick["volume"]
 
         s_exp = _asof_price(u_dates, u_prices, expiry)
         if s_exp is None:
@@ -102,14 +119,17 @@ def cash_secured_put_backtest(
         intrinsic = max(strike - s_exp, 0.0)
         assigned = intrinsic > 0
         commissions = p.commission_per_contract * (2 if assigned else 1)
-        pnl = (premium - intrinsic) * 100.0 - commissions
         collateral = strike * 100.0
+        days_held = max((expiry - entry).days, 0)
+        interest = collateral * p.risk_free_rate * days_held / 365.0
+        pnl = (premium - intrinsic) * 100.0 - commissions + interest
         ret = pnl / collateral
 
         trades.append({
             "entry": entry, "expiry": expiry, "spot": round(spot, 2), "strike": strike,
             "premium": round(premium, 4), "underlying_at_expiry": round(s_exp, 2),
-            "assigned": assigned, "pnl": round(pnl, 2), "return": ret,
+            "assigned": assigned, "entry_volume": (None if pd.isna(entry_volume) else int(entry_volume)),
+            "pnl": round(pnl, 2), "return": ret,
         })
 
         # next cycle: first trading day strictly after expiry
@@ -119,6 +139,7 @@ def cash_secured_put_backtest(
     metrics = {}
     if returns.size:
         total_return = float(np.prod(1.0 + returns) - 1.0)
+        entry_vols = [t["entry_volume"] for t in trades if t["entry_volume"] is not None]
         metrics = {
             "n_trades": int(returns.size),
             "win_rate": win_rate(returns),
@@ -128,6 +149,8 @@ def cash_secured_put_backtest(
             "sharpe_annualized": sharpe_ratio(returns, periods=p.cycles_per_year),
             "max_drawdown": max_drawdown(returns),
             "worst_trade": float(returns.min()),
+            "liquidity_skips": liquidity_skips,
+            "median_entry_volume": (float(np.median(entry_vols)) if entry_vols else None),
         }
         # Benchmark: buying & holding the underlying over the same traded window. Selling
         # premium can post a fine win-rate yet badly trail buy-and-hold (it caps upside) —

@@ -92,3 +92,29 @@ def test_csp_no_candidates_returns_empty():
     # require DTE far outside the contract's 30-day window -> no candidates
     res = cash_secured_put_backtest(opt, u, CSPParams(dte_min=60, dte_max=90))
     assert res.trades == [] and res.returns.size == 0
+
+
+def test_csp_liquidity_filter_picks_liquid_contract():
+    opt = pd.DataFrame([
+        {"date": date(2024, 1, 2), "contract": "P45", "expiry": date(2024, 2, 1),
+         "strike": 4.5, "kind": "P", "close": 0.20, "volume": 5},     # closest but thin
+        {"date": date(2024, 1, 2), "contract": "P40", "expiry": date(2024, 2, 1),
+         "strike": 4.0, "kind": "P", "close": 0.10, "volume": 100},   # liquid
+    ])
+    u = pd.Series({date(2024, 1, 2): 5.0, date(2024, 2, 1): 5.5})
+    # no filter -> picks strike closest to 4.75 = 4.5 (thin, vol 5)
+    r0 = cash_secured_put_backtest(opt, u, CSPParams(min_contract_volume=0))
+    assert r0.trades[0]["strike"] == 4.5 and r0.trades[0]["entry_volume"] == 5
+    # filter >=50 -> 4.5 excluded, falls to liquid 4.0 (vol 100)
+    r1 = cash_secured_put_backtest(opt, u, CSPParams(min_contract_volume=50))
+    assert r1.trades[0]["strike"] == 4.0 and r1.trades[0]["entry_volume"] == 100
+    assert r1.metrics["median_entry_volume"] == 100.0
+
+
+def test_csp_collateral_interest_adds_return():
+    opt, u = _csp_inputs(s_expiry=5.5)  # worthless put, base pnl 18.35
+    r0 = cash_secured_put_backtest(opt, u, CSPParams())
+    r1 = cash_secured_put_backtest(opt, u, CSPParams(risk_free_rate=0.05))
+    interest = 450 * 0.05 * 30 / 365  # collateral 450, 30 days held
+    # pnl is rounded to 2dp in the trade record
+    assert r1.trades[0]["pnl"] == pytest.approx(r0.trades[0]["pnl"] + interest, abs=0.01)

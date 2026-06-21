@@ -26,6 +26,12 @@ PARAMETERS = {
                              "description": "Sell put strike ~ this fraction of spot (OTM)."},
         "dte_min": {"type": "integer", "default": 25},
         "dte_max": {"type": "integer", "default": 45},
+        "min_contract_volume": {"type": "integer", "default": 10,
+                                "description": "Only enter contracts with >= this day's volume "
+                                "(filters unfillable thinly-traded contracts; honest default)."},
+        "risk_free_rate": {"type": "number", "default": 0.0,
+                           "description": "Annual rate earned on cash collateral, e.g. 0.05; "
+                           "0 ignores it (understates a cash-secured put's real return)."},
     },
     "required": ["ticker", "start", "end"],
 }
@@ -33,12 +39,14 @@ PARAMETERS = {
 
 def build(config: Config) -> ToolSpec:
     def handler(ticker, start, end, strategy="cash_secured_put",
-                target_moneyness=0.95, dte_min=25, dte_max=45):
+                target_moneyness=0.95, dte_min=25, dte_max=45,
+                min_contract_volume=10, risk_free_rate=0.0):
         if strategy != "cash_secured_put":
             return {"error": f"unsupported strategy: {strategy}"}
         opt = load_option_chain(config, ticker, start, end)
         under = load_underlying(ticker, start, end)
-        params = CSPParams(target_moneyness=target_moneyness, dte_min=dte_min, dte_max=dte_max)
+        params = CSPParams(target_moneyness=target_moneyness, dte_min=dte_min, dte_max=dte_max,
+                           min_contract_volume=min_contract_volume, risk_free_rate=risk_free_rate)
         res = cash_secured_put_backtest(opt, under, params)
         if not res.metrics:
             return {"ticker": ticker, "n_trades": 0, "note": "no trades generated for these params"}
@@ -48,7 +56,8 @@ def build(config: Config) -> ToolSpec:
 
         # auto-save: log to the experiment DB + write a Markdown report under runs/
         run_params = {"target_moneyness": target_moneyness, "dte_min": dte_min,
-                      "dte_max": dte_max, "start": start, "end": end}
+                      "dte_max": dte_max, "min_contract_volume": min_contract_volume,
+                      "risk_free_rate": risk_free_rate, "start": start, "end": end}
         config.ensure_dirs()
         tracker = ExperimentTracker(config.runs_dir / "experiments.duckdb")
         run_id = tracker.log_run(ticker, strategy, run_params, res.metrics)

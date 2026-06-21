@@ -50,6 +50,8 @@ def write_backtest_report(
         f"| Sharpe (annualized) | {metrics.get('sharpe_annualized')} |",
         f"| max drawdown | {_pct(metrics.get('max_drawdown'))} |",
         f"| worst trade | {_pct(metrics.get('worst_trade'))} |",
+        f"| median entry volume | {metrics.get('median_entry_volume')} |",
+        f"| cycles skipped (illiquid) | {metrics.get('liquidity_skips')} |",
         "",
         "## Worst 3 trades",
         "",
