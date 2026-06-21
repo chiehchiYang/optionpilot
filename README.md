@@ -45,11 +45,13 @@ Early scaffold. See [plan.md](plan.md) for the full design and roadmap.
 
 ## Quick start
 
+Full setup (package + LLM + data sources) is in **[docs/INSTALL.md](docs/INSTALL.md)**.
+
 ```bash
-uv sync                       # install
-cp .env.example .env          # add DATABENTO_API_KEY + an LLM key
-optionpilot "分析 SPY 的買點策略"   # headless
-optionpilot                   # interactive
+uv sync --extra dev --extra data   # install
+cp .env.example .env               # set OPTIONPILOT_DATA_SOURCE + keys (see INSTALL.md)
+uv run optionpilot "回測 ZETA 近一年的賣 put 跟持股比"   # headless
+uv run optionpilot                 # interactive
 ```
 
 ### Local model (zero-cost dev)
