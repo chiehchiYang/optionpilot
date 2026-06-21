@@ -17,6 +17,7 @@ from typing import Any, Callable
 
 from optionpilot.agent.context import ContextManager
 from optionpilot.agent.doom_loop import DoomLoopDetector
+from optionpilot.agent.playbook import RESEARCH_PLAYBOOK
 from optionpilot.agent.router import ToolRouter
 from optionpilot.config import Config
 from optionpilot.llm import LLMClient
@@ -46,7 +47,7 @@ SYSTEM_PROMPT = (
 
 
 def _system_prompt(today: str) -> str:
-    return f"{SYSTEM_PROMPT}\n\nThe current date is {today}."
+    return f"{SYSTEM_PROMPT}\n\nThe current date is {today}.\n\n{RESEARCH_PLAYBOOK}"
 
 
 class ExperimentLoop:

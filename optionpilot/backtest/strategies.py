@@ -29,7 +29,8 @@ class CSPParams:
     dte_min: int = 25
     dte_max: int = 45
     commission_per_contract: float = 0.65   # per leg, per contract (entry + assignment)
-    slippage_frac: float = 0.05             # haircut on premium received (bid-ask/slippage)
+    use_bid_ask: bool = True                # sell-to-open fills at the real bid when available
+    slippage_frac: float = 0.05             # fallback haircut when no bid/ask (e.g. OHLCV source)
     min_premium: float = 0.01               # ignore untradeable near-zero quotes
     min_contract_volume: int = 0            # require >= this day's volume to count as fillable
     risk_free_rate: float = 0.0             # annual rate earned on cash collateral (Step 2)
@@ -67,12 +68,13 @@ def cash_secured_put_backtest(
     p = params or CSPParams()
 
     d = opt_df
-    cols = ["date", "strike", "expiry", "close", "volume"]
+    cols = ["date", "strike", "expiry", "close", "volume", "bid"]
     puts = d[(d["kind"] == "P") & d["close"].notna() & (d["close"] >= p.min_premium)]
     puts = puts[[c for c in cols if c in puts.columns]].dropna(
         subset=["date", "strike", "expiry", "close"])
-    if "volume" not in puts.columns:
-        puts = puts.assign(volume=np.nan)
+    for col in ("volume", "bid"):
+        if col not in puts.columns:
+            puts = puts.assign(**{col: np.nan})
     if puts.empty:
         return CSPResult()
 
@@ -115,7 +117,13 @@ def cash_secured_put_backtest(
         target = spot * p.target_moneyness
         pick = cands.iloc[(cands["strike"] - target).abs().argmin()]
         strike, expiry = float(pick["strike"]), pick["expiry"]
-        premium = float(pick["close"]) * (1.0 - p.slippage_frac)
+        # honest fill: selling-to-open receives the bid; fall back to a slippage haircut on
+        # close only when the source has no bid/ask (e.g. Databento OHLCV).
+        bid = pick.get("bid")
+        if p.use_bid_ask and bid is not None and not pd.isna(bid) and float(bid) > 0:
+            premium, fill = float(bid), "bid"
+        else:
+            premium, fill = float(pick["close"]) * (1.0 - p.slippage_frac), "close-slippage"
         entry_volume = pick["volume"]
 
         s_exp = _asof_price(u_dates, u_prices, expiry)
@@ -134,7 +142,7 @@ def cash_secured_put_backtest(
             "entry": entry, "expiry": expiry, "spot": round(spot, 2), "strike": strike,
             "premium": round(premium, 4), "underlying_at_expiry": round(s_exp, 2),
             "assigned": assigned, "entry_volume": (None if pd.isna(entry_volume) else int(entry_volume)),
-            "pnl": round(pnl, 2), "return": ret,
+            "fill": fill, "pnl": round(pnl, 2), "return": ret,
         })
 
         # advance: by cadence (overlap allowed) or, sequentially, to past this expiry
@@ -157,6 +165,7 @@ def cash_secured_put_backtest(
             "max_drawdown": max_drawdown(returns),
             "worst_trade": float(returns.min()),
             "overlapping_samples": p.entry_every_days > 0,
+            "bid_fill_rate": float(np.mean([t["fill"] == "bid" for t in trades])),
             "liquidity_skips": liquidity_skips,
             "median_entry_volume": (float(np.median(entry_vols)) if entry_vols else None),
         }

@@ -134,6 +134,23 @@ def test_csp_entry_cadence_generates_more_trades():
     assert wk.metrics["overlapping_samples"] is True
 
 
+def test_csp_fills_at_bid_when_available():
+    opt = pd.DataFrame([{
+        "date": date(2024, 1, 2), "contract": "P45", "expiry": date(2024, 2, 1),
+        "strike": 4.5, "kind": "P", "close": 1.00, "bid": 0.80, "volume": 100,
+    }])
+    u = pd.Series({date(2024, 1, 2): 5.0, date(2024, 2, 1): 5.5})  # worthless -> keep premium
+    # use_bid_ask: premium = bid 0.80 -> pnl = 0.80*100 - 0.65 = 79.35
+    r_bid = cash_secured_put_backtest(opt, u, CSPParams(use_bid_ask=True))
+    assert r_bid.trades[0]["fill"] == "bid"
+    assert r_bid.trades[0]["pnl"] == pytest.approx(79.35, abs=1e-6)
+    assert r_bid.metrics["bid_fill_rate"] == 1.0
+    # fallback: no bid -> close*(1-0.05)=0.95 -> pnl = 95 - 0.65 = 94.35
+    r_fb = cash_secured_put_backtest(opt, u, CSPParams(use_bid_ask=False))
+    assert r_fb.trades[0]["fill"] == "close-slippage"
+    assert r_fb.trades[0]["pnl"] == pytest.approx(94.35, abs=1e-6)
+
+
 def test_csp_collateral_interest_adds_return():
     opt, u = _csp_inputs(s_expiry=5.5)  # worthless put, base pnl 18.35
     r0 = cash_secured_put_backtest(opt, u, CSPParams())

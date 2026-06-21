@@ -112,9 +112,9 @@ OptionPilot 是「**會自己研究期權策略、並用一整套嚴謹回測去
 - [x] **Step 1a：流動性過濾**（`min_contract_volume`，預設 10）。實證:ZETA 原本 19 筆交易的
   **中位進場合約一天只成交 1 口**（填不到單）；要求 ≥50 口後交易腰斬、報酬從 +23% 變 **-3.6%**。
   最大失真,已修。
-- [~] **Step 1b：真實 bid/ask**（賣方收 bid,不是收盤價）。Databento 報價只能用 `cbbo-1m`
-  （$0.38/月、**256萬筆/月** = OHLCV 的 500 倍量,需聚合成每日 EOD）。`bbo-1m`/`tbbo` OPRA 不支援。
-  → 較大工程,`DataSource` 的 bid/ask 欄位已就位,待接。
+- [x] **Step 1b：真實 bid/ask**（賣方收 bid,不是收盤價）。已接上——ThetaData 免費版直接給 bid/ask,
+  回測 `use_bid_ask` 預設用真 bid 成交（無 bid 的源退回 5% 滑價）。實證 ZETA:真 bid 比 5% 假設略悲觀。
+  metric `bid_fill_rate` 顯示多少比例用真 bid。
 - [x] **Step 2：抵押金生息**（`risk_free_rate`）。賣 CSP 鎖住的現金可生息,漏算會低估報酬。已加參數。
 - [ ] **Step 3：walk-forward + 參數掃描**（前段選最佳→後段驗證,防過擬合）。
 - [ ] **Step 4：IV rank 時機過濾 + 財報標記**（VRP 的 edge 來源;跨財報跳空風險不同）。
