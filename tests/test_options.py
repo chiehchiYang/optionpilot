@@ -9,6 +9,7 @@ from optionpilot.backtest.strategies import (
     CSPParams,
     cash_secured_put_backtest,
     covered_call_backtest,
+    wheel_backtest,
 )
 from optionpilot.data.osi import parse_osi, try_parse_osi
 from optionpilot.signals import daily_put_call_ratio, unusual_volume
@@ -117,6 +118,32 @@ def test_covered_call_called_away_caps_upside():
     assert t["assigned"] is True
     # (5.5 - 5.0 + 0.20)*100 - 2*0.65 = 70 - 1.3 = 68.7  (not the full 6.0 move)
     assert t["pnl"] == pytest.approx(68.7, abs=1e-6)
+
+
+def test_wheel_cycles_put_assignment_to_called_away():
+    from datetime import timedelta
+    # daily puts (strike 95) and calls (strike 105), each expiring +30d. Underlying dips below
+    # 95 (put assigned) then rises above 105 (call called away) -> wheel must use both legs.
+    rows, u = [], {}
+    d0 = date(2024, 1, 1)
+    for k in range(90):
+        entry = d0 + timedelta(days=k)
+        exp = entry + timedelta(days=30)
+        rows.append({"date": entry, "contract": f"P{k}", "expiry": exp, "strike": 95.0,
+                     "kind": "P", "close": 1.0, "bid": 0.8, "volume": 100})
+        rows.append({"date": entry, "contract": f"C{k}", "expiry": exp, "strike": 105.0,
+                     "kind": "C", "close": 1.0, "bid": 0.8, "volume": 100})
+    cur = d0
+    while cur <= d0 + timedelta(days=125):
+        n = (cur - d0).days
+        px = 100 - n if n <= 30 else (70 + (n - 30))   # 100 -> 70 (day30) -> rises after
+        u[cur] = float(max(px, 60))
+        cur += timedelta(days=1)
+    res = wheel_backtest(pd.DataFrame(rows), pd.Series(u).sort_index(), CSPParams())
+    m = res.metrics
+    assert m["put_sales"] >= 1 and m["call_sales"] >= 1   # state machine used both legs
+    assert m["assignments"] >= 1                           # a put was assigned -> went to SHARES
+    assert "excess_vs_buy_hold" in m
 
 
 def test_csp_no_candidates_returns_empty():

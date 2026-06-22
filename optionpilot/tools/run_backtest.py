@@ -11,6 +11,7 @@ from optionpilot.backtest.strategies import (
     CSPParams,
     cash_secured_put_backtest,
     covered_call_backtest,
+    wheel_backtest,
 )
 from optionpilot.config import Config
 from optionpilot.data.market import load_option_chain, load_underlying
@@ -24,7 +25,8 @@ PARAMETERS = {
         "ticker": {"type": "string", "description": "Underlying ticker, e.g. ZETA"},
         "start": {"type": "string", "description": "ISO date, e.g. 2023-01-01"},
         "end": {"type": "string", "description": "ISO date, e.g. 2025-01-01"},
-        "strategy": {"type": "string", "enum": ["cash_secured_put", "covered_call"],
+        "strategy": {"type": "string",
+                     "enum": ["cash_secured_put", "covered_call", "wheel"],
                      "default": "cash_secured_put"},
         "target_moneyness": {"type": "number",
                              "description": "Strike as a fraction of spot. Puts: <1 OTM "
@@ -53,10 +55,10 @@ def build(config: Config, approve_spend=None) -> ToolSpec:
                 target_moneyness=None, dte_min=25, dte_max=45,
                 min_contract_volume=10, risk_free_rate=0.0, entry_every_days=0):
         backtests = {"cash_secured_put": cash_secured_put_backtest,
-                     "covered_call": covered_call_backtest}
+                     "covered_call": covered_call_backtest, "wheel": wheel_backtest}
         if strategy not in backtests:
             return {"error": f"unsupported strategy: {strategy}"}
-        if target_moneyness is None:
+        if target_moneyness is None:  # wheel uses this as its put leg (0.95)
             target_moneyness = 1.05 if strategy == "covered_call" else 0.95
         from optionpilot.data.databento_fetcher import CostGuardError, FetchDenied
         try:

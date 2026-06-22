@@ -25,7 +25,8 @@ from optionpilot.backtest.metrics import max_drawdown, sharpe_ratio, win_rate
 
 @dataclass
 class CSPParams:
-    target_moneyness: float = 0.95          # sell strike ~ 95% of spot (OTM put)
+    target_moneyness: float = 0.95          # put/call strike ~ this fraction of spot (OTM)
+    call_moneyness: float = 1.05            # wheel's call leg: sell call ~ this multiple of spot
     dte_min: int = 25
     dte_max: int = 45
     commission_per_contract: float = 0.65   # per leg, per contract (entry + assignment)
@@ -181,6 +182,148 @@ def cash_secured_put_backtest(
 
     returns, metrics = _summarize(trades, p, liquidity_skips, u_dates, u_prices)
     return CSPResult(trades=trades, returns=returns, metrics=metrics)
+
+
+def wheel_backtest(
+    opt_df: pd.DataFrame,
+    underlying: pd.Series,
+    params: CSPParams | None = None,
+) -> CSPResult:
+    """The full wheel as a state machine on one cash-secured 100-share unit.
+
+    CASH: sell a cash-secured put (target_moneyness). If assigned (S_exp < strike) you buy 100
+    shares at basis=strike and switch to SHARES; else keep the premium and stay in CASH.
+    SHARES: sell a covered call at >= max(spot, basis) (never lock a loss) near call_moneyness.
+    If called away (S_exp > strike) you sell the shares at strike, realize (strike-basis)*100,
+    and switch back to CASH; else keep the premium and stay in SHARES. Any shares held at the
+    end are marked to the final price. P&L is one connected stream on the initial collateral.
+    """
+    p = params or CSPParams()
+
+    def _prep(kind: str) -> dict:
+        x = opt_df[(opt_df["kind"] == kind) & opt_df["close"].notna()
+                   & (opt_df["close"] >= p.min_premium)]
+        keep = [c for c in ("date", "strike", "expiry", "close", "volume", "bid") if c in x.columns]
+        x = x[keep].dropna(subset=["date", "strike", "expiry", "close"])
+        for c in ("volume", "bid"):
+            if c not in x.columns:
+                x = x.assign(**{c: np.nan})
+        return {dt: g for dt, g in x.groupby("date")}
+
+    puts_by, calls_by = _prep("P"), _prep("C")
+    calendar = sorted(set(puts_by) | set(calls_by))
+    if not calendar:
+        return CSPResult()
+
+    u = underlying.sort_index()
+    u_dates = [x if isinstance(x, date) else pd.Timestamp(x).date() for x in u.index]
+    u_prices = [float(x) for x in u.values]
+
+    def _premium(pick):
+        bid = pick.get("bid")
+        if p.use_bid_ask and bid is not None and not pd.isna(bid) and float(bid) > 0:
+            return float(bid), "bid"
+        return float(pick["close"]) * (1.0 - p.slippage_frac), "close-slippage"
+
+    def _liquid(c):
+        return c[c["volume"].fillna(0) >= p.min_contract_volume] if p.min_contract_volume > 0 else c
+
+    trades: list[dict] = []
+    cum_pnl, initial_collateral = 0.0, None
+    equity = []  # cumulative pnl after each cycle
+    state, basis = "CASH", None
+    i = 0
+    while i < len(calendar):
+        day = calendar[i]
+        spot = _asof_price(u_dates, u_prices, day)
+        if spot is None or spot <= 0:
+            i += 1
+            continue
+        lo = (pd.Timestamp(day) + pd.Timedelta(days=p.dte_min)).date()
+        hi = (pd.Timestamp(day) + pd.Timedelta(days=p.dte_max)).date()
+
+        if state == "CASH":
+            c = puts_by.get(day)
+            if c is None:
+                i += 1
+                continue
+            c = _liquid(c[(c["expiry"] >= lo) & (c["expiry"] <= hi) & (c["strike"] <= spot)])
+            if c.empty:
+                i += 1
+                continue
+            pick = c.iloc[(c["strike"] - spot * p.target_moneyness).abs().argmin()]
+            strike, expiry = float(pick["strike"]), pick["expiry"]
+            premium, fill = _premium(pick)
+            s_exp = _asof_price(u_dates, u_prices, expiry)
+            if s_exp is None:
+                break
+            if initial_collateral is None:
+                initial_collateral = strike * 100.0
+            assigned = s_exp < strike
+            cyc = premium * 100.0 - p.commission_per_contract * (2 if assigned else 1)
+            if assigned:
+                basis, state = strike, "SHARES"
+            leg = "put"
+        else:  # SHARES -> sell a covered call that won't lock a loss
+            c = calls_by.get(day)
+            if c is None:
+                i += 1
+                continue
+            floor = max(spot, basis)
+            c = _liquid(c[(c["expiry"] >= lo) & (c["expiry"] <= hi) & (c["strike"] >= floor)])
+            if c.empty:
+                i += 1
+                continue
+            pick = c.iloc[(c["strike"] - spot * p.call_moneyness).abs().argmin()]
+            strike, expiry = float(pick["strike"]), pick["expiry"]
+            premium, fill = _premium(pick)
+            s_exp = _asof_price(u_dates, u_prices, expiry)
+            if s_exp is None:
+                break
+            called = s_exp > strike
+            cyc = premium * 100.0 - p.commission_per_contract * (2 if called else 1)
+            if called:
+                cyc += (strike - basis) * 100.0
+                basis, state = None, "CASH"
+            leg = "call"
+
+        cum_pnl += cyc
+        equity.append(cum_pnl)
+        trades.append({"leg": leg, "entry": day, "expiry": expiry, "spot": round(spot, 2),
+                       "strike": strike, "premium": round(premium, 4),
+                       "underlying_at_expiry": round(s_exp, 2),
+                       "assigned": (assigned if leg == "put" else called), "fill": fill,
+                       "pnl": round(cyc, 2), "return": cyc / (initial_collateral or 1.0)})
+        i = bisect.bisect_right(calendar, expiry)
+
+    if not trades or not initial_collateral:
+        return CSPResult()
+    if state == "SHARES" and basis is not None:  # mark remaining shares to the last price
+        final = _asof_price(u_dates, u_prices, calendar[-1])
+        if final is not None:
+            cum_pnl += (final - basis) * 100.0
+            equity.append(cum_pnl)
+
+    equity_curve = np.array([initial_collateral] + [initial_collateral + e for e in equity])
+    step_returns = np.diff(equity_curve) / equity_curve[:-1]
+    metrics = {
+        "n_trades": len(trades),
+        "put_sales": sum(t["leg"] == "put" for t in trades),
+        "call_sales": sum(t["leg"] == "call" for t in trades),
+        "assignments": sum(t["leg"] == "put" and t["assigned"] for t in trades),
+        "called_away": sum(t["leg"] == "call" and t["assigned"] for t in trades),
+        "win_rate": float(np.mean([t["pnl"] > 0 for t in trades])),
+        "total_return": float(equity_curve[-1] / initial_collateral - 1.0),
+        "sharpe_annualized": sharpe_ratio(step_returns, periods=p.cycles_per_year),
+        "max_drawdown": max_drawdown(step_returns),
+        "bid_fill_rate": float(np.mean([t["fill"] == "bid" for t in trades])),
+    }
+    s0 = _asof_price(u_dates, u_prices, trades[0]["entry"])
+    s1 = _asof_price(u_dates, u_prices, trades[-1]["expiry"])
+    if s0 and s1 and s0 > 0:
+        metrics["benchmark_buy_hold"] = s1 / s0 - 1.0
+        metrics["excess_vs_buy_hold"] = metrics["total_return"] - (s1 / s0 - 1.0)
+    return CSPResult(trades=trades, returns=step_returns, metrics=metrics)
 
 
 def covered_call_backtest(

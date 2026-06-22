@@ -21,7 +21,11 @@ WORKFLOW (default tool sequence; skip a step only with a stated reason):
    means nothing if excess_vs_buy_hold is negative.
 3. VALIDATE — optimize_strategy: walk-forward. Do the in-sample-tuned params hold OUT-OF-SAMPLE?
    If out_of_sample is much worse than in_sample, it was overfit — say so plainly.
-4. SYNTHESIZE: write an honest verdict and tell the user the saved report path.
+4. ITERATE — do NOT conclude from a single backtest. Run 2-3 variations that could change the
+   verdict: a different DTE window or moneyness, or cash_secured_put vs covered_call. Use
+   list_experiments to compare them side by side. Stop iterating when the results converge or a
+   few variations make the answer clear.
+5. SYNTHESIZE: write an honest verdict (citing the compared variations) and the saved report path.
 
 NON-NEGOTIABLE PRINCIPLES:
 - Always judge against buy&hold. A win-rate that trails owning the stock is a losing trade.
