@@ -68,4 +68,5 @@ def test_default_tools_build():
     names = {s.name for s in specs}
     assert names == {"ask_user", "fetch_options_data", "run_backtest", "optimize_strategy",
                      "detect_unusual_activity", "measure_vrp", "make_charts",
-                     "support_resistance", "list_experiments"}
+                     "support_resistance", "funding_analysis", "grid_backtest",
+                     "list_experiments"}

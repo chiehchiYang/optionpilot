@@ -7,6 +7,8 @@ from optionpilot.tools import (
     ask_user,
     detect_unusual_activity,
     fetch_options_data,
+    funding_analysis,
+    grid_backtest,
     list_experiments,
     make_charts,
     measure_vrp,
@@ -25,6 +27,8 @@ _BUILDERS = [
     measure_vrp.build,
     make_charts.build,
     support_resistance.build,
+    funding_analysis.build,
+    grid_backtest.build,
     list_experiments.build,
 ]
 
