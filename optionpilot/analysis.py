@@ -64,6 +64,75 @@ def _implied_vols(opt_df: pd.DataFrame, underlying: pd.Series, rate: float,
     return ivs
 
 
+def support_resistance(ohlc: pd.DataFrame, lookback: int = 120, swing_window: int = 5,
+                       n_levels: int = 3) -> dict:
+    """Algorithmic support/resistance from OHLC: swing lows/highs + classic pivot points.
+
+    Deterministic (no discretionary calls): swing lows/highs are local extrema over a
+    +/- swing_window window; pivots are the textbook floor-trader levels from the last ~month.
+    ohlc must have High/Low/Close columns (yfinance format).
+    """
+    df = ohlc.tail(lookback)
+    close, lows, highs = df["Close"], df["Low"], df["High"]
+    cur = float(close.iloc[-1])
+    lo, hi = lows.to_numpy(dtype=float), highs.to_numpy(dtype=float)
+
+    sw_lo, sw_hi, w = [], [], swing_window
+    for i in range(w, len(df) - w):
+        if lo[i] == lo[i - w:i + w + 1].min():
+            sw_lo.append(float(lo[i]))
+        if hi[i] == hi[i - w:i + w + 1].max():
+            sw_hi.append(float(hi[i]))
+
+    supports = sorted({round(x, 2) for x in sw_lo if x < cur}, reverse=True)[:n_levels]
+    resistances = sorted({round(x, 2) for x in sw_hi if x > cur})[:n_levels]
+
+    p = df.tail(21)  # ~last month
+    H, L, C = float(p["High"].max()), float(p["Low"].min()), float(p["Close"].iloc[-1])
+    P = (H + L + C) / 3.0
+    pivots = {"P": P, "S1": 2 * P - H, "S2": P - (H - L), "S3": L - 2 * (H - P),
+              "R1": 2 * P - L, "R2": P + (H - L), "R3": H + 2 * (P - L)}
+    return {
+        "current_price": round(cur, 2),
+        "lookback_days": int(len(df)),
+        "recent_low": round(float(lows.min()), 2),
+        "recent_high": round(float(highs.max()), 2),
+        "swing_supports": supports,
+        "swing_resistances": resistances,
+        "pivots": {k: round(v, 2) for k, v in pivots.items()},
+    }
+
+
+def implied_vol_timeseries(opt_df: pd.DataFrame, underlying: pd.Series, rate: float = 0.05,
+                           dte_lo: int = 20, dte_hi: int = 60, min_price: float = 0.05):
+    """Daily near-ATM implied vol as (sorted dates, ivs) — for the IV-vs-realized chart."""
+    u = underlying.sort_index()
+    spot_by_date = {(d if isinstance(d, date) else pd.Timestamp(d).date()): float(v)
+                    for d, v in u.items()}
+    out = []
+    for d, day in opt_df.groupby("date"):
+        spot = spot_by_date.get(d)
+        if not spot or spot <= 0:
+            continue
+        day = day.copy()
+        day["dte"] = (pd.to_datetime(day["expiry"]) - pd.to_datetime(d)).dt.days
+        c = day[day["dte"].between(dte_lo, dte_hi) & (day["close"] > min_price)
+                & (day["volume"].fillna(0) > 0)]
+        if c.empty:
+            continue
+        atm = c.iloc[(c["strike"] - spot).abs().argmin()]
+        try:
+            iv = implied_volatility(float(atm["close"]), spot, float(atm["strike"]),
+                                    atm["dte"] / 365.0, rate,
+                                    "call" if atm["kind"] == "C" else "put")
+            if 0.02 < iv < 8.0:
+                out.append((d, iv))
+        except Exception:  # noqa: BLE001
+            continue
+    out.sort(key=lambda x: x[0])
+    return [d for d, _ in out], [iv for _, iv in out]
+
+
 def measure_vrp(opt_df: pd.DataFrame, underlying: pd.Series, rate: float = 0.05) -> dict:
     """Implied vs realized vol (total + downside) + the variance risk premium + buy&hold."""
     rv = realized_vol(underlying)

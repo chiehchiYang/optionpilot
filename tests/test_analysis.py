@@ -5,7 +5,7 @@ from datetime import date, timedelta
 import pandas as pd
 import pytest
 
-from optionpilot.analysis import measure_vrp, realized_vol
+from optionpilot.analysis import measure_vrp, realized_vol, support_resistance
 from optionpilot.data.greeks import black_scholes_price
 
 
@@ -18,6 +18,22 @@ def test_realized_vol_splits_up_down():
     rv = realized_vol(pd.Series(px, index=idx))
     assert rv["downside_vol"] > rv["upside_vol"]   # -2% moves bigger than +1%
     assert rv["up_days"] + rv["down_days"] == 19
+
+
+def test_support_resistance_levels():
+    # V-shaped path: dips to a low (support) then recovers; current price mid-way up
+    lows = list(range(50, 30, -1)) + list(range(30, 45))     # 50->30->44
+    ohlc = pd.DataFrame({
+        "High": [x + 1 for x in lows],
+        "Low": [x - 1 for x in lows],
+        "Close": lows,
+    })
+    res = support_resistance(ohlc, lookback=120, swing_window=3)
+    cur = res["current_price"]
+    assert res["recent_low"] <= cur <= res["recent_high"]
+    assert all(s < cur for s in res["swing_supports"])        # supports below price
+    assert all(r > cur for r in res["swing_resistances"])     # resistances above price
+    assert {"P", "S1", "R1"} <= set(res["pivots"])            # pivot levels present
 
 
 def test_measure_vrp_recovers_known_iv():

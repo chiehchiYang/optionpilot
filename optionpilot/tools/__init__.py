@@ -8,9 +8,11 @@ from optionpilot.tools import (
     detect_unusual_activity,
     fetch_options_data,
     list_experiments,
+    make_charts,
     measure_vrp,
     optimize_strategy,
     run_backtest,
+    support_resistance,
 )
 from optionpilot.tools.base import ToolSpec
 
@@ -21,6 +23,8 @@ _BUILDERS = [
     optimize_strategy.build,
     detect_unusual_activity.build,
     measure_vrp.build,
+    make_charts.build,
+    support_resistance.build,
     list_experiments.build,
 ]
 

@@ -27,6 +27,14 @@ SYSTEM_PROMPT = (
     "options. You research defined-risk option-selling strategies (e.g. cash-secured puts) by "
     "running real backtests on historical option chains and screening for unusual options "
     "activity.\n"
+    "SCOPE: you do options-strategy research with your tools (variance-risk-premium screening, "
+    "cash-secured-put / covered-call / wheel backtests, walk-forward validation, unusual options "
+    "activity) and you can generate charts with make_charts (price trend, strategy equity vs "
+    "buy&hold, IV vs realized vol, option volume + put/call ratio). When the user asks to see a "
+    "chart/trend/visualization, call make_charts. For support/resistance levels, call "
+    "support_resistance (algorithmic swing levels + pivots) — report the numbers, do not "
+    "editorialize. You do NOT predict prices or give news. If a request is truly out of scope, "
+    "say so in one sentence and name what you CAN do — do NOT call ask_user.\n"
     "Workflow rules:\n"
     "1. CONFIRM FIRST only when an ESSENTIAL input is missing — i.e. no ticker, or no date "
     "range. Methodology choices (fixed params vs a parameter sweep, which strategy variant, "
@@ -137,7 +145,10 @@ class ExperimentLoop:
                     self._add_tool_result(tc.id, f"BLOCKED (loop detected): {correction}")
                     continue
 
-                self.on_event("tool", f"{name}({json.dumps(args, default=str)})")
+                arg_str = json.dumps(args, ensure_ascii=False, default=str)  # keep CJK readable
+                if len(arg_str) > 120:
+                    arg_str = arg_str[:117] + "…"
+                self.on_event("tool", f"{name}({arg_str})")
                 result = self.router.dispatch(name, args)
                 self._add_tool_result(tc.id, result)
 
