@@ -84,6 +84,7 @@ def support_resistance(ohlc: pd.DataFrame, lookback: int = 120, swing_window: in
         if hi[i] == hi[i - w:i + w + 1].max():
             sw_hi.append(float(hi[i]))
 
+    # nearest first: supports are swing lows just below price; resistances swing highs above.
     supports = sorted({round(x, 2) for x in sw_lo if x < cur}, reverse=True)[:n_levels]
     resistances = sorted({round(x, 2) for x in sw_hi if x > cur})[:n_levels]
 
@@ -95,11 +96,17 @@ def support_resistance(ohlc: pd.DataFrame, lookback: int = 120, swing_window: in
     return {
         "current_price": round(cur, 2),
         "lookback_days": int(len(df)),
+        "nearest_support": supports[0] if supports else None,
+        "nearest_resistance": resistances[0] if resistances else None,
+        "support_levels": supports,         # swing lows BELOW price, nearest -> furthest
+        "resistance_levels": resistances,   # swing highs ABOVE price, nearest -> furthest
         "recent_low": round(float(lows.min()), 2),
         "recent_high": round(float(highs.max()), 2),
-        "swing_supports": supports,
-        "swing_resistances": resistances,
         "pivots": {k: round(v, 2) for k, v in pivots.items()},
+        "note": ("support_levels are recent swing lows below the current price, ordered "
+                 "nearest-to-furthest (not by time); resistance_levels are swing highs above, "
+                 "nearest-to-furthest. pivots are classic floor-trader levels (P, S1-S3, "
+                 "R1-R3). All are algorithmic levels from price history, not forecasts."),
     }
 
 

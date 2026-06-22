@@ -31,8 +31,11 @@ def test_support_resistance_levels():
     res = support_resistance(ohlc, lookback=120, swing_window=3)
     cur = res["current_price"]
     assert res["recent_low"] <= cur <= res["recent_high"]
-    assert all(s < cur for s in res["swing_supports"])        # supports below price
-    assert all(r > cur for r in res["swing_resistances"])     # resistances above price
+    assert all(s < cur for s in res["support_levels"])        # supports below price
+    assert all(r > cur for r in res["resistance_levels"])     # resistances above price
+    # nearest first: support_levels descending, nearest_support is the highest one below price
+    assert res["support_levels"] == sorted(res["support_levels"], reverse=True)
+    assert res["nearest_support"] == res["support_levels"][0]
     assert {"P", "S1", "R1"} <= set(res["pivots"])            # pivot levels present
 
 
