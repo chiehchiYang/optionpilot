@@ -82,7 +82,8 @@ def build_app():
         gr.Markdown(
             "# 🛞 OptionPilot — 期權策略研究 intern\n"
             "問一個研究問題,它自己跑方法論(measure_vrp → 回測 → walk-forward),"
-            "即時顯示工具呼叫,圖表直接出現在對話裡。需先啟動本地模型。"
+            "即時顯示工具呼叫,圖表直接出現在對話裡。需先啟動本地模型。\n"
+            "_想知道能做什麼?問「**你有哪些工具?**」_"
         )
         chatbot = gr.Chatbot(height=600, show_label=False, render_markdown=True)
         session = gr.State()
@@ -90,8 +91,9 @@ def build_app():
                          show_label=False, autofocus=True)
         gr.Examples(
             examples=[
+                "你有哪些工具?",
                 "研究 ZETA 的 wheel 策略並畫出圖表,2024-07-01 到 2026-06-18",
-                "畫 ZETA 的價格趨勢和波動率圖,2024-07-01 到 2026-06-18",
+                "ZETA 近期支撐位在多少?",
                 "ZETA 賣 cash-secured put 值得嗎?跟買進持有比並畫權益曲線",
             ],
             inputs=msg,

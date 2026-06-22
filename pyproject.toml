@@ -16,6 +16,7 @@ dependencies = [
     "scipy>=1.13",
     "matplotlib>=3.7",
     "rich>=13.7",
+    "opencc>=1.1",
 ]
 
 [project.optional-dependencies]

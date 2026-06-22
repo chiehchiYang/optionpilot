@@ -17,6 +17,7 @@ from typing import Any, Callable
 
 from optionpilot.agent.context import ContextManager
 from optionpilot.agent.doom_loop import DoomLoopDetector
+from optionpilot.agent.lang import to_traditional
 from optionpilot.agent.playbook import RESEARCH_PLAYBOOK
 from optionpilot.agent.router import ToolRouter
 from optionpilot.config import Config
@@ -51,14 +52,26 @@ SYSTEM_PROMPT = (
     "5. DATES: you have no clock — use the current date given below. Convert relative ranges "
     "(e.g. 'last two years', 'two years back from today') into absolute ISO dates yourself. "
     "Option data only exists up to roughly yesterday, so never use a future end date.\n"
-    "6. LANGUAGE: write your final answer in the SAME language and script as the user's "
-    "question. If they ask in Traditional Chinese (繁體中文), answer in Traditional Chinese.\n"
+    "6. LANGUAGE: match the user's language. For ANY Chinese you MUST write in Traditional "
+    "Chinese (繁體中文/正體字) ONLY — never Simplified (简体字). Use 體/與/數據/這/個/沒/會, "
+    "never 体/与/数据/这/个/没/会.\n"
+    "7. CAPABILITIES: if the user asks what you can do or which tools you have, list the tools "
+    "from 'Your tools' below with a one-line description each — no tool call needed.\n"
     "Use the provided tools; never fabricate data or metrics."
 )
 
 
-def _system_prompt(today: str) -> str:
-    return f"{SYSTEM_PROMPT}\n\nThe current date is {today}.\n\n{RESEARCH_PLAYBOOK}"
+def _tools_section(router) -> str:
+    lines = []
+    for s in router.specs():
+        desc = s.description.split(". ")[0].rstrip(".")
+        lines.append(f"- {s.name}: {desc}.")
+    return "Your tools:\n" + "\n".join(lines)
+
+
+def _system_prompt(today: str, router=None) -> str:
+    tools = f"\n\n{_tools_section(router)}" if router is not None else ""
+    return f"{SYSTEM_PROMPT}\n\nThe current date is {today}.\n\n{RESEARCH_PLAYBOOK}{tools}"
 
 
 class ExperimentLoop:
@@ -76,7 +89,7 @@ class ExperimentLoop:
         self.doom = DoomLoopDetector()
         # on_event(kind, text): surfaces tool activity to the UI; defaults to stderr.
         self.on_event = on_event or self._default_event
-        self.context.add("system", _system_prompt(date.today().isoformat()))
+        self.context.add("system", _system_prompt(date.today().isoformat(), router))
 
     @staticmethod
     def _default_event(kind: str, text: str) -> None:
@@ -127,7 +140,7 @@ class ExperimentLoop:
 
             tool_calls = getattr(msg, "tool_calls", None)
             if not tool_calls:
-                return last_text  # no more tools -> final answer
+                return to_traditional(last_text)  # no more tools -> final answer
 
             for tc in tool_calls:
                 name = tc.function.name
@@ -152,7 +165,7 @@ class ExperimentLoop:
                 result = self.router.dispatch(name, args)
                 self._add_tool_result(tc.id, result)
 
-        return last_text or "(stopped: reached max iterations without a final answer)"
+        return to_traditional(last_text) or "(stopped: reached max iterations without a final answer)"
 
     def _add_tool_result(self, tool_call_id: str, content: str) -> None:
         self.context.add_raw({"role": "tool", "tool_call_id": tool_call_id, "content": content})
