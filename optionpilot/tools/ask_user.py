@@ -22,9 +22,10 @@ PARAMETERS = {
 }
 
 
-def build(config: Config, approve_spend=None) -> ToolSpec:
+def build(config: Config, approve_spend=None, interactive: bool = True) -> ToolSpec:
     def handler(question):
-        if not sys.stdin.isatty():
+        # Non-interactive (e.g. GUI/headless): never block on terminal input.
+        if not interactive or not sys.stdin.isatty():
             return ("NO_INTERACTIVE_TERMINAL: proceed with sensible defaults and state your "
                     "assumptions explicitly in the final answer.")
         print(f"\n❓ {question}")

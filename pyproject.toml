@@ -26,6 +26,9 @@ data = [
 models = [
     "xgboost>=2.0",
 ]
+ui = [
+    "gradio>=6.0",
+]
 dev = [
     "pytest>=8.0",
     "ruff>=0.5",
@@ -33,6 +36,7 @@ dev = [
 
 [project.scripts]
 optionpilot = "optionpilot.cli:app"
+optionpilot-ui = "optionpilot.ui.app:main"
 
 [build-system]
 requires = ["hatchling"]

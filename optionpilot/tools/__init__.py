@@ -25,16 +25,23 @@ _BUILDERS = [
 ]
 
 
-def default_tools(config: Config, approve_spend=None) -> list[ToolSpec]:
+def default_tools(config: Config, approve_spend=None, interactive: bool = True) -> list[ToolSpec]:
     """Instantiate the core tools bound to the given config.
 
     approve_spend(message, usd) -> bool is consulted by data tools only when a paid download
-    is about to happen (estimates and cache hits never prompt)."""
-    return [build(config, approve_spend=approve_spend) for build in _BUILDERS]
+    is about to happen. interactive=False (e.g. GUI) makes ask_user never block on terminal
+    input — it returns a use-defaults note instead."""
+    tools = []
+    for build in _BUILDERS:
+        if build is ask_user.build:
+            tools.append(build(config, approve_spend=approve_spend, interactive=interactive))
+        else:
+            tools.append(build(config, approve_spend=approve_spend))
+    return tools
 
 
-def register_default_tools(router, config: Config, approve_spend=None) -> None:
-    for spec in default_tools(config, approve_spend=approve_spend):
+def register_default_tools(router, config: Config, approve_spend=None, interactive: bool = True) -> None:
+    for spec in default_tools(config, approve_spend=approve_spend, interactive=interactive):
         router.register(spec)
 
 

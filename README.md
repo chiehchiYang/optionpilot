@@ -54,6 +54,16 @@ uv run optionpilot "回測 ZETA 近一年的賣 put 跟持股比"   # headless
 uv run optionpilot                 # interactive
 ```
 
+### Chat GUI
+
+A Gradio chat interface that streams the intern's tool calls + verdict live:
+
+```bash
+uv sync --extra ui
+bash scripts/serve_local.sh   # local model must be running (separate terminal)
+uv run optionpilot-ui         # opens http://localhost:7860
+```
+
 ### Local model (zero-cost dev)
 
 Run a local OpenAI-compatible server and point OptionPilot at it — no API key, no rate limits.
