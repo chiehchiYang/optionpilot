@@ -16,21 +16,18 @@ from rich.console import Console
 from optionpilot import __version__
 from optionpilot.agent.approval import auto_spend, interactive_spend
 from optionpilot.agent.loop import ExperimentLoop
-from optionpilot.agent.router import ToolRouter
+from optionpilot.agent.profiles import PROFILES, build_loop
 from optionpilot.config import Config
-from optionpilot.tools import register_default_tools
 
 app = typer.Typer(add_completion=False, help="OptionPilot — options-strategy research agent.")
 console = Console()
 
 
-def _build_loop(config: Config, auto: bool) -> ExperimentLoop:
+def _build_loop(config: Config, auto: bool, profile_key: str = "options") -> ExperimentLoop:
     # Approval is consulted only at the point of a paid download (estimates / cache hits are
     # free and never prompt). --auto-approve allows; otherwise the user confirms each purchase.
     approve_spend = auto_spend if auto else interactive_spend
-    router = ToolRouter()  # tool-level gating unused; spend approval lives in the data layer
-    register_default_tools(router, config, approve_spend=approve_spend)
-    return ExperimentLoop(config=config, router=router)
+    return build_loop(config, PROFILES[profile_key], approve_spend=approve_spend)
 
 
 @app.command()
@@ -39,12 +36,20 @@ def main(
     auto_approve_flag: bool = typer.Option(
         False, "--auto-approve", help="Auto-approve all tool calls (headless automation)."
     ),
+    profile: str = typer.Option(
+        "options", "--profile", help="Research desk: 'options' (stock options) or 'crypto' "
+        "(Binance USDⓈ-M perps)."
+    ),
     model: str = typer.Option(None, "--model", help="Override the LiteLLM model string."),
     version: bool = typer.Option(False, "--version", help="Print version and exit."),
 ):
     if version:
         console.print(f"OptionPilot {__version__}")
         raise typer.Exit()
+
+    if profile not in PROFILES:
+        console.print(f"[red]unknown profile '{profile}'; choose from {list(PROFILES)}[/red]")
+        raise typer.Exit(code=1)
 
     config = Config.load()
     if model:
@@ -53,7 +58,7 @@ def main(
 
     # Money-spending tools always require approval unless --auto-approve is explicitly set
     # (headless included). Interactive approval is no-tty-safe (denies) so nothing spends silently.
-    loop = _build_loop(config, auto=auto_approve_flag)
+    loop = _build_loop(config, auto=auto_approve_flag, profile_key=profile)
 
     if task:
         console.print(loop.run(task))

@@ -1,4 +1,11 @@
-"""Tools layer: the core tools, plus a helper to register them on a ToolRouter."""
+"""Tools layer: the core tools, grouped by research domain (options vs perp), plus helpers to
+register a chosen tool set on a ToolRouter.
+
+Two isolated tool sets back the two GUI tabs / agent profiles:
+- OPTIONS_BUILDERS: stock-options research (VRP, CSP/CC/wheel backtests, charts, S/R…).
+- CRYPTO_BUILDERS: Binance USDⓈ-M perpetuals (funding carry, grid backtest).
+ask_user + list_experiments are shared by both.
+"""
 
 from __future__ import annotations
 
@@ -18,7 +25,8 @@ from optionpilot.tools import (
 )
 from optionpilot.tools.base import ToolSpec
 
-_BUILDERS = [
+# Options-desk tool set (the original default profile).
+OPTIONS_BUILDERS = [
     ask_user.build,
     fetch_options_data.build,
     run_backtest.build,
@@ -27,20 +35,26 @@ _BUILDERS = [
     measure_vrp.build,
     make_charts.build,
     support_resistance.build,
+    list_experiments.build,
+]
+
+# Perp-desk tool set (isolated): Binance USDⓈ-M funding carry + grid backtest.
+CRYPTO_BUILDERS = [
+    ask_user.build,
     funding_analysis.build,
     grid_backtest.build,
     list_experiments.build,
 ]
 
 
-def default_tools(config: Config, approve_spend=None, interactive: bool = True) -> list[ToolSpec]:
-    """Instantiate the core tools bound to the given config.
+def build_tools(config: Config, builders, approve_spend=None,
+                interactive: bool = True) -> list[ToolSpec]:
+    """Instantiate the given tool builders bound to config.
 
-    approve_spend(message, usd) -> bool is consulted by data tools only when a paid download
-    is about to happen. interactive=False (e.g. GUI) makes ask_user never block on terminal
-    input — it returns a use-defaults note instead."""
+    approve_spend(message, usd) -> bool is consulted by data tools only when a paid download is
+    about to happen. interactive=False (e.g. GUI) makes ask_user never block on terminal input."""
     tools = []
-    for build in _BUILDERS:
+    for build in builders:
         if build is ask_user.build:
             tools.append(build(config, approve_spend=approve_spend, interactive=interactive))
         else:
@@ -48,9 +62,23 @@ def default_tools(config: Config, approve_spend=None, interactive: bool = True) 
     return tools
 
 
-def register_default_tools(router, config: Config, approve_spend=None, interactive: bool = True) -> None:
-    for spec in default_tools(config, approve_spend=approve_spend, interactive=interactive):
+def default_tools(config: Config, approve_spend=None, interactive: bool = True) -> list[ToolSpec]:
+    """The options-desk tool set (the default profile)."""
+    return build_tools(config, OPTIONS_BUILDERS, approve_spend=approve_spend,
+                       interactive=interactive)
+
+
+def register_tools(router, config: Config, builders, approve_spend=None,
+                   interactive: bool = True) -> None:
+    for spec in build_tools(config, builders, approve_spend=approve_spend, interactive=interactive):
         router.register(spec)
 
 
-__all__ = ["ToolSpec", "default_tools", "register_default_tools"]
+def register_default_tools(router, config: Config, approve_spend=None,
+                           interactive: bool = True) -> None:
+    register_tools(router, config, OPTIONS_BUILDERS, approve_spend=approve_spend,
+                   interactive=interactive)
+
+
+__all__ = ["ToolSpec", "OPTIONS_BUILDERS", "CRYPTO_BUILDERS", "build_tools", "default_tools",
+           "register_tools", "register_default_tools"]

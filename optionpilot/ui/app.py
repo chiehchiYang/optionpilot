@@ -1,32 +1,31 @@
-"""Gradio chat UI for OptionPilot's ml-intern — chat on the left, generated charts on the right.
+"""Gradio chat UI for OptionPilot — two ISOLATED desks as tabs.
 
-Type a research question; the intern runs its methodology (measure_vrp -> backtest ->
-walk-forward -> verdict), streams each tool call live, and any charts it makes (make_charts)
-appear in the gallery. Needs the local model server (scripts/serve_local.sh) and, for free
-data, the ThetaData terminal. gradio is imported lazily so the streaming helpers stay testable.
+Tab「股票期權」runs the options-research intern; tab「幣安永續」runs the Binance perp-futures
+desk. Each tab has its own agent, conversation context, system prompt, and tool set — the two
+never mix. Type a research question; the agent streams each tool call live and any charts it
+makes appear inline in the thread. Needs the local model server (scripts/serve_local.sh).
+gradio is imported lazily so the streaming helpers stay testable.
 """
 
 from __future__ import annotations
 
 import queue
 import threading
+from functools import partial
 
 from optionpilot.agent.approval import auto_spend
-from optionpilot.agent.loop import ExperimentLoop
-from optionpilot.agent.router import ToolRouter
+from optionpilot.agent.profiles import CRYPTO_PROFILE, OPTIONS_PROFILE, Profile, build_loop
 from optionpilot.config import Config
-from optionpilot.tools import register_default_tools
 
 
-def new_session() -> dict:
-    """A fresh agent + the event queue its on_event pushes tool activity into."""
+def new_session(profile: Profile) -> dict:
+    """A fresh agent for one profile + the event queue its on_event pushes tool activity into."""
     cfg = Config.load()
-    router = ToolRouter()
-    # interactive=False: in the GUI, ask_user must never block on terminal input
-    register_default_tools(router, cfg, approve_spend=auto_spend, interactive=False)
     events: queue.Queue = queue.Queue()
-    loop = ExperimentLoop(cfg, router, on_event=lambda kind, text: events.put((kind, text)))
-    return {"loop": loop, "events": events, "cfg": cfg}
+    # interactive=False: in the GUI, ask_user must never block on terminal input
+    loop = build_loop(cfg, profile, approve_spend=auto_spend, interactive=False,
+                      on_event=lambda kind, text: events.put((kind, text)))
+    return {"loop": loop, "events": events, "cfg": cfg, "profile": profile}
 
 
 def stream_run(loop, events, message):
@@ -58,9 +57,9 @@ def _chart_paths(cfg) -> set:
     return set(d.glob("*.png")) if d.exists() else set()
 
 
-def chat_handler(message, history, session):
-    """Stream the intern's text, then append any charts it generated INLINE in the thread."""
-    session = session or new_session()
+def chat_handler(message, history, session, profile: Profile):
+    """Stream the agent's text, then append any charts it generated INLINE in the thread."""
+    session = session or new_session(profile)
     cfg = session["cfg"]
     before = _chart_paths(cfg)
     base = list(history or []) + [{"role": "user", "content": message}]
@@ -75,32 +74,46 @@ def chat_handler(message, history, session):
     yield msgs, session
 
 
+_EXAMPLES = {
+    "options": [
+        "你有哪些工具?",
+        "研究 ZETA 的 wheel 策略並畫出圖表,2024-07-01 到 2026-06-18",
+        "ZETA 近期支撐位在多少?",
+        "ZETA 賣 cash-secured put 值得嗎?跟買進持有比並畫權益曲線",
+    ],
+    "crypto": [
+        "你有哪些工具?",
+        "分析 NOKUSDT 的資金費率 carry",
+        "回測 BTCUSDT 的網格機器人,用 1 小時 K 線",
+        "AAPLUSDT 適合做網格嗎?跟買進持有比較",
+    ],
+}
+
+
+def _make_tab(gr, profile: Profile):
+    """Build one isolated desk tab (its own chatbot + session State + handler)."""
+    with gr.Tab(profile.label):
+        gr.Markdown(f"**{profile.label}** — {profile.blurb}\n\n_想知道能做什麼?問「**你有哪些工具?**」_")
+        chatbot = gr.Chatbot(height=560, show_label=False, render_markdown=True)
+        session = gr.State()
+        msg = gr.Textbox(placeholder=_EXAMPLES[profile.key][1], show_label=False)
+        gr.Examples(examples=_EXAMPLES[profile.key], inputs=msg)
+        msg.submit(partial(chat_handler, profile=profile),
+                   [msg, chatbot, session], [chatbot, session]).then(lambda: "", None, msg)
+
+
 def build_app():
     import gradio as gr
 
-    with gr.Blocks(title="OptionPilot — ml-intern") as app:
+    with gr.Blocks(title="OptionPilot") as app:
         gr.Markdown(
-            "# 🛞 OptionPilot — 期權策略研究 intern\n"
-            "問一個研究問題,它自己跑方法論(measure_vrp → 回測 → walk-forward),"
-            "即時顯示工具呼叫,圖表直接出現在對話裡。需先啟動本地模型。\n"
-            "_想知道能做什麼?問「**你有哪些工具?**」_"
+            "# 🛞 OptionPilot\n"
+            "兩個獨立研究台,context 互不干擾:**股票期權** 跑期權策略方法論;"
+            "**幣安永續** 研究 USDⓈ-M 永續合約的資金費率與網格(公開資料、不下單)。需先啟動本地模型。"
         )
-        chatbot = gr.Chatbot(height=600, show_label=False, render_markdown=True)
-        session = gr.State()
-        msg = gr.Textbox(placeholder="例:研究 ZETA 的 wheel 策略並畫圖,2024-07-01 到 2026-06-18",
-                         show_label=False, autofocus=True)
-        gr.Examples(
-            examples=[
-                "你有哪些工具?",
-                "研究 ZETA 的 wheel 策略並畫出圖表,2024-07-01 到 2026-06-18",
-                "ZETA 近期支撐位在多少?",
-                "ZETA 賣 cash-secured put 值得嗎?跟買進持有比並畫權益曲線",
-            ],
-            inputs=msg,
-        )
-        msg.submit(chat_handler, [msg, chatbot, session], [chatbot, session]).then(
-            lambda: "", None, msg
-        )
+        with gr.Tabs():
+            _make_tab(gr, OPTIONS_PROFILE)
+            _make_tab(gr, CRYPTO_PROFILE)
     return app
 
 
