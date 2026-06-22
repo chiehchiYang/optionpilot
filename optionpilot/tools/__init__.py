@@ -21,6 +21,7 @@ from optionpilot.tools import (
     measure_vrp,
     optimize_strategy,
     run_backtest,
+    show_trajectory,
     support_resistance,
 )
 from optionpilot.tools.base import ToolSpec
@@ -36,6 +37,7 @@ OPTIONS_BUILDERS = [
     make_charts.build,
     support_resistance.build,
     list_experiments.build,
+    show_trajectory.build,
 ]
 
 # Perp-desk tool set (isolated): Binance USDⓈ-M funding carry + grid backtest.
@@ -44,6 +46,7 @@ CRYPTO_BUILDERS = [
     funding_analysis.build,
     grid_backtest.build,
     list_experiments.build,
+    show_trajectory.build,
 ]
 
 

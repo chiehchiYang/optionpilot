@@ -40,6 +40,10 @@ def main(
         "options", "--profile", help="Research desk: 'options' (stock options) or 'crypto' "
         "(Binance USDⓈ-M perps)."
     ),
+    plan: bool = typer.Option(
+        False, "--plan", help="Planner-driven mode: explicit per-round hypothesis/decision "
+        "nodes (run_planned) instead of the reactive loop."
+    ),
     model: str = typer.Option(None, "--model", help="Override the LiteLLM model string."),
     version: bool = typer.Option(False, "--version", help="Print version and exit."),
 ):
@@ -59,9 +63,10 @@ def main(
     # Money-spending tools always require approval unless --auto-approve is explicitly set
     # (headless included). Interactive approval is no-tty-safe (denies) so nothing spends silently.
     loop = _build_loop(config, auto=auto_approve_flag, profile_key=profile)
+    run = (lambda t: loop.run_planned(t)) if plan else loop.run
 
     if task:
-        console.print(loop.run(task))
+        console.print(run(task))
         return
 
     console.print(f"[bold]OptionPilot {__version__}[/bold] — interactive mode. Ctrl-D to exit.")
@@ -73,7 +78,7 @@ def main(
             break
         if not user_in:
             continue
-        console.print(loop.run(user_in))
+        console.print(run(user_in))
 
 
 if __name__ == "__main__":

@@ -59,4 +59,5 @@ def build_loop(config: Config, profile: Profile, approve_spend=None, interactive
     register_tools(router, config, list(profile.builders), approve_spend=approve_spend,
                    interactive=interactive)
     return ExperimentLoop(config, router, on_event=on_event,
-                          system_prompt=profile.system_prompt, playbook=profile.playbook)
+                          system_prompt=profile.system_prompt, playbook=profile.playbook,
+                          profile_key=profile.key)

@@ -18,8 +18,10 @@ from typing import Any, Callable
 from optionpilot.agent.context import ContextManager
 from optionpilot.agent.doom_loop import DoomLoopDetector
 from optionpilot.agent.lang import to_traditional
+from optionpilot.agent.planner import Planner
 from optionpilot.agent.playbook import RESEARCH_PLAYBOOK
 from optionpilot.agent.router import ToolRouter
+from optionpilot.agent.trajectory import Trajectory
 from optionpilot.config import Config
 from optionpilot.llm import LLMClient
 
@@ -118,12 +120,18 @@ class ExperimentLoop:
         on_event: Callable[[str, str], None] | None = None,
         system_prompt: str = OPTIONS_SYSTEM_PROMPT,
         playbook: str = RESEARCH_PLAYBOOK,
+        profile_key: str = "options",
+        persist_trajectory: bool = True,
     ):
         self.config = config
         self.router = router
         self.llm = llm or LLMClient.from_config(config)
         self.context = ContextManager(compact_at_tokens=config.context_compact_tokens)
         self.doom = DoomLoopDetector()
+        self.planner = Planner(self.llm)
+        self.profile_key = profile_key
+        self.persist_trajectory = persist_trajectory
+        self.trajectory: Trajectory | None = None  # set per run()/run_planned()
         # on_event(kind, text): surfaces tool activity to the UI; defaults to stderr.
         self.on_event = on_event or self._default_event
         self.context.add("system", _system_prompt(date.today().isoformat(), router,
@@ -162,7 +170,46 @@ class ExperimentLoop:
         return out
 
     def run(self, task: str) -> str:
-        """Run the loop for a single user task and return the final assistant message."""
+        """Run the reactive tool-calling loop for one task; record + persist the trajectory."""
+        self.trajectory = Trajectory(task, self.profile_key)
+        self.trajectory.add("task", task)
+        text = self._react(task)
+        self.trajectory.verdict(text)
+        self._persist_trajectory()
+        return to_traditional(text)
+
+    def run_planned(self, task: str, max_rounds: int = 4) -> str:
+        """Planner-driven research: each round the Planner proposes an explicit hypothesis +
+        change (a recorded node), the reactive loop executes it, then we synthesize a verdict.
+
+        This makes the research PATH explicit and structured — every step's hypothesis and
+        decision is a node in the trajectory — instead of being implicit in the tool loop."""
+        self.trajectory = Trajectory(task, self.profile_key)
+        self.trajectory.add("task", task)
+        history: list[dict] = []
+        for r in range(max_rounds):
+            proposal = self.planner.propose_next(task, history)
+            self.trajectory.plan(proposal.hypothesis, proposal.change, proposal.rationale,
+                                 proposal.done)
+            self.on_event("plan", f"R{r + 1}: {proposal.change or '(judged: done)'}")
+            if proposal.done:
+                break
+            directive = (f"研究假設:{proposal.hypothesis}\n下一步請執行:{proposal.change}\n"
+                         "用你的工具實際驗證,並讀出關鍵指標(務必對比 buy&hold)。")
+            result = self._react(directive)
+            history.append({"hypothesis": proposal.hypothesis, "change": proposal.change,
+                            "result": result[:800]})
+        verdict = self._react("根據以上所有實驗,寫出誠實的最終結論:證據強弱、是否優於買進持有、"
+                              "有哪些限制。不要誇大。")
+        self.trajectory.verdict(verdict)
+        self._persist_trajectory()
+        return to_traditional(verdict)
+
+    def _react(self, task: str) -> str:
+        """The reactive tool-calling loop: feed a directive, run tools until the LLM answers.
+
+        Records each step into self.trajectory (decision = the assistant's stated reasoning;
+        tool = name/args/result). Returns the final assistant text (untranslated)."""
         self.context.add("user", task)
         schemas = self.router.openai_schemas()
 
@@ -178,7 +225,10 @@ class ExperimentLoop:
 
             tool_calls = getattr(msg, "tool_calls", None)
             if not tool_calls:
-                return to_traditional(last_text)  # no more tools -> final answer
+                return last_text  # no more tools -> final answer for this directive
+
+            if last_text and self.trajectory is not None:
+                self.trajectory.decision(last_text)  # the agent's reasoning before acting
 
             for tc in tool_calls:
                 name = tc.function.name
@@ -187,6 +237,8 @@ class ExperimentLoop:
                 except json.JSONDecodeError as e:
                     result = f"ERROR: arguments for '{name}' were not valid JSON: {e}"
                     self.on_event("tool-error", f"{name}: bad JSON args")
+                    if self.trajectory is not None:
+                        self.trajectory.tool(name, tc.function.arguments, result)
                     self._add_tool_result(tc.id, result)
                     continue
 
@@ -201,9 +253,22 @@ class ExperimentLoop:
                     arg_str = arg_str[:117] + "…"
                 self.on_event("tool", f"{name}({arg_str})")
                 result = self.router.dispatch(name, args)
+                if self.trajectory is not None:
+                    self.trajectory.tool(name, args, result)
                 self._add_tool_result(tc.id, result)
 
-        return to_traditional(last_text) or "(stopped: reached max iterations without a final answer)"
+        return last_text or "(stopped: reached max iterations without a final answer)"
+
+    def _persist_trajectory(self) -> None:
+        """Save the run's path to runs/trajectories/ (best-effort; never crash the run)."""
+        if not self.persist_trajectory or self.trajectory is None:
+            return
+        try:
+            self.config.ensure_dirs()
+            paths = self.trajectory.save(self.config.runs_dir / "trajectories")
+            self.on_event("trajectory", f"研究路徑已存:{paths['md']}")
+        except Exception as e:  # noqa: BLE001 - persistence must never break the run
+            self.on_event("trajectory-error", str(e))
 
     def _add_tool_result(self, tool_call_id: str, content: str) -> None:
         self.context.add_raw({"role": "tool", "tool_call_id": tool_call_id, "content": content})

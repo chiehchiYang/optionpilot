@@ -255,7 +255,28 @@ flowchart LR
 
 ---
 
-## 5. 外部相依
+## 5. 研究路徑記錄(Trajectory)+ Planner 模式
+
+每次 `ExperimentLoop.run()` / `run_planned()` 都會把研究路徑記成有序節點並落地,讓你能事後翻閱 intern **怎麼想、走了哪條路、為何下這個結論**,而不只看到答案。
+
+- **節點型別**(`agent/trajectory.py`):`task`(任務)→ `plan`(假設/下一步/理由)→ `decision`(行動前的推理)→ `tool`(工具名+參數+結果摘要)→ `verdict`(結論)。
+- **落地**:`runs/trajectories/<時間>_<profile>.{jsonl,md}`;JSONL 給機器、Markdown 給人讀。
+- **回放**:共用工具 `show_trajectory`(`which=latest|list` 或指定 `name`)——在對話中問「**研究路徑/過程**」就會載入。
+- **兩種驅動**:
+  - `run()` — 反應式工具迴圈(預設;GUI 用),路徑全程記錄。
+  - `run_planned()` — **Planner 驅動**:每輪由 `Planner.propose_next` 顯式產生 `{hypothesis, change, rationale, done}` 節點 → 反應式子迴圈執行 → 收斂後合成結論。CLI 用 `--plan` 開啟。
+
+```mermaid
+flowchart LR
+    T["run / run_planned"] --> TJ["Trajectory<br/>task→plan→decision→tool→verdict"]
+    TJ --> SAVE["runs/trajectories/*.jsonl + *.md"]
+    SAVE --> ST["show_trajectory 工具<br/>(對話中回放)"]
+    PL["Planner.propose_next<br/>(--plan 模式)"] -. 產生 plan 節點 .-> TJ
+```
+
+---
+
+## 6. 外部相依
 
 - **LLM 服務**:本地 vLLM(`scripts/serve_local.sh`,Qwen3-Coder-30B-A3B-Instruct-FP8)或任何 LiteLLM 支援的雲端模型。
 - **期權資料**:ThetaData 本地終端(免費,port 25503)/ Databento OPRA(付費,成本守門);underlying 用 yfinance。

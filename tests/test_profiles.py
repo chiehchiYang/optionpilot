@@ -20,7 +20,7 @@ def test_crypto_desk_has_perp_tools_not_options():
     assert {"funding_analysis", "grid_backtest"} <= names
     assert "run_backtest" not in names and "measure_vrp" not in names
     # shared helpers are available on both desks
-    assert {"ask_user", "list_experiments"} <= names
+    assert {"ask_user", "list_experiments", "show_trajectory"} <= names
 
 
 def test_profiles_have_distinct_prompts():
