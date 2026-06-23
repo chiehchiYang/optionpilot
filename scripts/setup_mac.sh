@@ -1,15 +1,13 @@
 #!/usr/bin/env bash
-# Set up OptionPilot on macOS — the Mac counterpart to setup_vllm.sh/serve_local.sh (which are
-# NVIDIA-only and must NOT be run here). It runs `uv sync`, ASKS which LLM backend to use
-# (defaulting by chip), prompts for an API key when you pick cloud, writes a `.env`, and then
+# Set up OptionPilot on macOS — the Mac counterpart to setup_vllm.sh/serve_local.sh (NVIDIA-only,
+# do NOT run those here). Picks an environment manager, installs the package into an isolated env,
+# ASKS which LLM backend to use (default by chip), prompts for an API key on the cloud path, and
 # VERIFIES the LLM works with a tiny test request.
 #
-#   Apple Silicon (arm64): default = local Ollama (Metal); model size chosen from RAM.
-#   Intel (x86_64):        default = cloud (local CPU inference isn't worth it).
-#
-# Non-interactive (CI): pass -y/--yes or set OPTIONPILOT_NONINTERACTIVE=1 to use the chip default
-# and skip the key prompt + verification. Secrets only land in .env / .env.* (all gitignored).
-# Full guide: docs/deploy_mac.md
+# Env manager priority:  uv (if present)  ->  conda (if present)  ->  ask: install uv | venv+pip
+# Non-interactive (CI): -y / OPTIONPILOT_NONINTERACTIVE=1 uses the chip default, installs uv if
+# neither uv nor conda exists, and skips the key prompt + verification.
+# Secrets only land in .env / .env.* (all gitignored). Full guide: docs/deploy_mac.md
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -17,21 +15,15 @@ ARCH="$(uname -m)"
 MEM_GB=$(( $(sysctl -n hw.memsize 2>/dev/null || echo 0) / 1073741824 ))
 echo "==> OptionPilot Mac setup  (arch: $ARCH, RAM: ${MEM_GB}GB)"
 
-# --- prerequisites (check, don't force-install) ---
-if ! command -v python3 >/dev/null 2>&1; then
-  echo "!! Python 3.11+ not found. Install it (brew install python@3.12) and re-run." >&2; exit 1
-fi
-echo "    Python $(python3 -c 'import sys;print("%d.%d"%sys.version_info[:2])')"
-if ! command -v uv >/dev/null 2>&1; then
-  echo "!! 'uv' not found. Install:  curl -LsSf https://astral.sh/uv/install.sh | sh   (then re-run)" >&2
-  exit 1
-fi
+NONINTERACTIVE="${OPTIONPILOT_NONINTERACTIVE:-0}"
+for arg in "$@"; do case "$arg" in -y|--yes) NONINTERACTIVE=1 ;; esac; done
+[ -t 0 ] || NONINTERACTIVE=1     # no TTY (piped) -> can't prompt
 
 # verify_llm <litellm-model>: send a tiny request and report whether the LLM is reachable/usable.
-# Reads provider keys from the environment (export them before calling). Returns non-zero on fail.
+# Uses $RUN (set during env setup) so it works under uv / conda / venv. Reads provider keys from env.
 verify_llm() {
   echo "==> 測試 LLM 是否可用(送一個極小請求)…"
-  if uv run python - "$1" <<'PY'
+  if $RUN python - "$1" <<'PY'
 import sys, litellm
 try:
     litellm.completion(model=sys.argv[1], messages=[{"role": "user", "content": "ping"}],
@@ -45,16 +37,75 @@ PY
   else echo "    ❌ 測試失敗(檢查 key / 額度 / 網路 / 模型名 / ollama serve 是否啟動)"; return 1; fi
 }
 
-# --- python package ---
-echo "==> uv sync --extra data --extra ui --extra dev"
-uv sync --extra data --extra ui --extra dev
+# --- pick an environment manager + install OptionPilot into an isolated env ---
+HAS_UV=0;    if command -v uv >/dev/null 2>&1;    then HAS_UV=1;    fi
+HAS_CONDA=0; if command -v conda >/dev/null 2>&1; then HAS_CONDA=1; fi
+ENV_MODE=""
+
+if [ "$NONINTERACTIVE" = "1" ]; then
+  if   [ "$HAS_UV" = 1 ];    then ENV_MODE="uv"
+  elif [ "$HAS_CONDA" = 1 ]; then ENV_MODE="conda"
+  else                            ENV_MODE="install-uv"; fi
+  echo "==> non-interactive env manager: $ENV_MODE"
+else
+  # default to what's already installed (uv > conda), else install uv — but always let you pick
+  if [ "$HAS_UV" = 1 ]; then DEF=1; elif [ "$HAS_CONDA" = 1 ]; then DEF=2; else DEF=1; fi
+  UVLBL="(未安裝 → 會自動裝)";   [ "$HAS_UV" = 1 ]    && UVLBL="(已安裝,推薦)"
+  CDLBL="(未安裝 → 需先裝 miniforge)"; [ "$HAS_CONDA" = 1 ] && CDLBL="(已安裝)"
+  echo
+  echo "    用哪個環境管理器建立隔離環境?"
+  echo "      1) uv $UVLBL"
+  echo "      2) conda $CDLBL"
+  echo "      3) venv + pip(需 Python 3.11+)"
+  read -r -p "    請選 [$DEF]: " EM; EM="${EM:-$DEF}"
+  case "$EM" in
+    2) if [ "$HAS_CONDA" = 1 ]; then ENV_MODE="conda"
+       else echo "!! 找不到 conda(請先裝 miniforge),或改選 1/3。" >&2; exit 1; fi ;;
+    3) ENV_MODE="venv" ;;
+    *) if [ "$HAS_UV" = 1 ]; then ENV_MODE="uv"; else ENV_MODE="install-uv"; fi ;;
+  esac
+fi
+
+if [ "$ENV_MODE" = "install-uv" ]; then
+  echo "==> 安裝 uv…"
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+  command -v uv >/dev/null 2>&1 || { echo "!! uv 裝好了但 PATH 還沒生效,重開終端再跑一次。" >&2; exit 1; }
+  ENV_MODE="uv"
+fi
+
+RUN=""           # prefix for python/optionpilot calls
+ACTIVATE_HINT=""  # what the user must run in their shell before calling optionpilot directly
+case "$ENV_MODE" in
+  uv)
+    echo "==> uv sync --extra data --extra ui --extra dev"
+    uv sync --extra data --extra ui --extra dev
+    RUN="uv run"; ACTIVATE_HINT="" ;;
+  conda)
+    echo "==> conda env 'optionpilot' (python 3.12 + 預編 binary,繞過 wheel 問題)"
+    # shellcheck disable=SC1091
+    source "$(conda info --base)/etc/profile.d/conda.sh"
+    conda env list | grep -q '^optionpilot ' \
+      || conda create -y -n optionpilot python=3.12 pyarrow numpy scipy duckdb
+    conda activate optionpilot
+    pip install -e ".[data,ui,dev]"
+    RUN=""; ACTIVATE_HINT="conda activate optionpilot" ;;
+  venv)
+    command -v python3 >/dev/null 2>&1 || { echo "!! 沒有 python3;改用 A) 裝 uv。" >&2; exit 1; }
+    PYV="$(python3 -c 'import sys;print("%d%02d"%sys.version_info[:2])')"
+    [ "$PYV" -ge 311 ] || { echo "!! 需要 Python 3.11+(目前 $PYV);改用 uv 或 conda。" >&2; exit 1; }
+    echo "==> python3 -m venv .venv  +  pip install -e"
+    python3 -m venv .venv
+    # shellcheck disable=SC1091
+    source .venv/bin/activate
+    pip install -U pip >/dev/null
+    pip install -e ".[data,ui,dev]"
+    RUN=""; ACTIVATE_HINT="source .venv/bin/activate" ;;
+esac
+echo "==> 環境就緒($ENV_MODE)"
 
 # --- choose the LLM backend (default by chip; ask unless non-interactive) ---
 if [ "$ARCH" = "arm64" ]; then DEFAULT_CHOICE=1; else DEFAULT_CHOICE=2; fi
-NONINTERACTIVE="${OPTIONPILOT_NONINTERACTIVE:-0}"
-for arg in "$@"; do case "$arg" in -y|--yes) NONINTERACTIVE=1 ;; esac; done
-[ -t 0 ] || NONINTERACTIVE=1     # no TTY (piped) -> can't prompt
-
 if [ "$NONINTERACTIVE" = "1" ]; then
   CHOICE="$DEFAULT_CHOICE"
   echo "==> non-interactive: using chip default (choice $CHOICE)"
@@ -91,7 +142,6 @@ case "$CHOICE" in
       echo "OPTIONPILOT_DATA_SOURCE=thetadata"
       echo "# DATABENTO_API_KEY=db-..."
     } > "$TARGET"
-
     if command -v ollama >/dev/null 2>&1; then
       echo "==> Pulling ${MODEL_TAG} (can take a while)…"
       ollama pull "${MODEL_TAG}" || echo "!! pull failed — run 'ollama pull ${MODEL_TAG}' manually."
@@ -129,11 +179,9 @@ case "$CHOICE" in
       esac
       if [ -z "$MODEL" ]; then
         echo "==> 其他供應商:請依 LiteLLM 文件手動設定 $TARGET(OPTIONPILOT_MODEL + 對應 key)。"
-        {
-          echo "# OptionPilot — cloud LLM (set your model + provider key per LiteLLM docs)"
+        { echo "# OptionPilot — cloud LLM (set model + provider key per LiteLLM docs)"
           echo "OPTIONPILOT_MODEL="
-          echo "OPTIONPILOT_DATA_SOURCE=thetadata"
-        } > "$TARGET"
+          echo "OPTIONPILOT_DATA_SOURCE=thetadata"; } > "$TARGET"
       else
         read -r -s -p "    貼上 ${KEYVAR}: " APIKEY; echo
         {
@@ -158,7 +206,8 @@ esac
 echo
 [ "$TARGET" = "(none)" ] || echo "==> Wrote $TARGET"
 echo "    Next:"
-echo "      • crypto desk (no data key):  uv run optionpilot --profile crypto \"分析 NOKUSDT 資金費率\""
-echo "      • options desk (needs data):  start ThetaData/Databento, then uv run optionpilot \"...\""
-echo "      • GUI (two tabs):             uv run optionpilot-ui"
+[ -n "$ACTIVATE_HINT" ] && echo "      • 先啟用環境:  $ACTIVATE_HINT"
+echo "      • crypto desk (no data key):  ${RUN:+$RUN }optionpilot --profile crypto \"分析 NOKUSDT 資金費率\""
+echo "      • options desk (needs data):  start ThetaData/Databento, then ${RUN:+$RUN }optionpilot \"...\""
+echo "      • GUI (two tabs):             ${RUN:+$RUN }optionpilot-ui"
 echo "    Full guide: docs/deploy_mac.md"
