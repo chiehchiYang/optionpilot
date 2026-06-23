@@ -23,11 +23,22 @@ def load_option_chain(
 
 def load_underlying(ticker: str, start: str, end: str) -> pd.Series:
     """Underlying daily close as a Series indexed by python date (via yfinance)."""
+    return _yf_close(ticker.upper(), start, end)
+
+
+def load_vix(start: str, end: str, symbol: str = "^VIX") -> pd.Series:
+    """CBOE VIX daily close as a Series indexed by python date (the equity 'fear gauge').
+
+    symbol='^VIX' (30-day) by default; pass '^VIX3M' for the 3-month for term-structure work."""
+    return _yf_close(symbol, start, end)
+
+
+def _yf_close(symbol: str, start: str, end: str) -> pd.Series:
     import yfinance as yf
 
-    df = yf.download(ticker.upper(), start=start, end=end, progress=False, auto_adjust=False)
+    df = yf.download(symbol, start=start, end=end, progress=False, auto_adjust=False)
     if df.empty:
-        raise ValueError(f"no underlying price data for {ticker} {start}..{end}")
+        raise ValueError(f"no price data for {symbol} {start}..{end}")
     s = df["Close"].squeeze()
     s.index = [d.date() for d in s.index]
     return s

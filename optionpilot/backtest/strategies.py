@@ -36,6 +36,11 @@ class CSPParams:
     min_contract_volume: int = 0            # require >= this day's volume to count as fillable
     risk_free_rate: float = 0.0             # annual rate earned on cash collateral (Step 2)
     cycles_per_year: float = 12.0           # for annualizing; auto-set when entry_every_days>0
+    # Optional VIX regime gate (sentiment filter). When a `vix` series is passed to the backtest,
+    # only enter on a date whose VIX expanding-percentile (lookahead-free) is within this band.
+    # None = no gate. e.g. vix_pct_min=50 -> only sell puts when fear is above its running median.
+    vix_pct_min: float | None = None
+    vix_pct_max: float | None = None
     # Entry cadence. 0 = sequential non-overlapping (enter the next position only after the
     # previous expires). >0 = open a new position every N trading days (overlapping allowed) —
     # a sampling study that yields many more trades on short/active histories.
@@ -90,14 +95,33 @@ def cash_secured_put_backtest(
     opt_df: pd.DataFrame,
     underlying: pd.Series,
     params: CSPParams | None = None,
+    vix: pd.Series | None = None,
 ) -> CSPResult:
     """Backtest systematic cash-secured put writing.
 
     opt_df: normalized option chain (see data.sources) with columns
         `date`, `expiry`, `strike`, `kind`, `close`.
     underlying: Series indexed by date -> underlying close price.
+    vix: optional VIX series (indexed by date). With params.vix_pct_min/max set, entries are
+        gated to the desired regime via a lookahead-free expanding percentile.
     """
     p = params or CSPParams()
+
+    # precompute VIX arrays once for the (optional) regime gate
+    vix_gate = vix is not None and (p.vix_pct_min is not None or p.vix_pct_max is not None)
+    vix_dates: list = []
+    vix_vals: list = []
+    if vix_gate:
+        vs = vix.sort_index().dropna()
+        vix_dates = [x if isinstance(x, date) else pd.Timestamp(x).date() for x in vs.index]
+        vix_vals = [float(x) for x in vs.values]
+
+    def _vix_pct(entry) -> float | None:
+        pos = bisect.bisect_right(vix_dates, entry) - 1
+        if pos < 0:
+            return None
+        cur, hist = vix_vals[pos], vix_vals[: pos + 1]
+        return 100.0 * sum(1 for v in hist if v <= cur) / len(hist)
 
     d = opt_df
     cols = ["date", "strike", "expiry", "close", "volume", "bid"]
@@ -127,6 +151,14 @@ def cash_secured_put_backtest(
         if spot is None or spot <= 0:
             i += step
             continue
+
+        if vix_gate:  # sentiment regime filter: skip entries outside the desired VIX percentile
+            pct = _vix_pct(entry)
+            if (pct is None
+                    or (p.vix_pct_min is not None and pct < p.vix_pct_min)
+                    or (p.vix_pct_max is not None and pct > p.vix_pct_max)):
+                i += step
+                continue
 
         cands = by_date[entry]
         lo = (pd.Timestamp(entry) + pd.Timedelta(days=p.dte_min)).date()

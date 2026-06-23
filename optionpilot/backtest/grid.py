@@ -33,6 +33,10 @@ class GridParams:
     fee_rate: float = 0.0002           # per fill, fraction (2 bps ~ Binance USDⓈ-M maker)
     spacing: str = "arith"             # "arith" (equal $ step) or "geom" (equal % step)
     funding_per_8h: float | None = None  # mean funding rate per 8h; applied as a long-carry drag
+    # Optional VIX regime gate: when a `vix` series is passed, only ADD inventory (fill buys) on a
+    # bar whose VIX expanding-percentile (lookahead-free) is <= this. Sells are always allowed, so
+    # the grid de-risks but stops catching the knife when equity fear is high. None = no gate.
+    vix_pct_max: float | None = None
 
 
 def _grid_lines(lower: float, upper: float, n: int, spacing: str) -> np.ndarray:
@@ -48,13 +52,28 @@ def _drawdown(equity: np.ndarray) -> float:
     return float((equity / peak - 1.0).min())
 
 
-def grid_backtest(klines: pd.DataFrame, p: GridParams) -> dict:
-    """Run the long-only grid over a klines frame (needs a 'close' column, time-sorted index)."""
+def grid_backtest(klines: pd.DataFrame, p: GridParams, vix: pd.Series | None = None) -> dict:
+    """Run the long-only grid over a klines frame (needs a 'close' column, time-sorted index).
+
+    vix: optional VIX series (by date). With params.vix_pct_max set, new buys are gated to
+    calm-regime bars (lookahead-free expanding percentile); sells are never gated."""
     if klines is None or klines.empty or "close" not in klines:
         return {"ran": False, "reason": "沒有 K 線資料"}
     closes = klines["close"].astype(float).to_numpy()
+    times = list(klines.index)
     if closes.size < 3:
         return {"ran": False, "reason": "K 線太少,無法回測"}
+
+    # optional VIX regime gate: precompute one expanding-percentile per bar date (no lookahead)
+    vix_gate = vix is not None and p.vix_pct_max is not None
+    pct_by_date: dict = {}
+    if vix_gate:
+        from optionpilot.sentiment import expanding_pct_rank
+        for ts in times:
+            d = ts.date() if hasattr(ts, "date") else ts
+            if d not in pct_by_date:
+                pct_by_date[d] = expanding_pct_rank(vix, d)
+    n_buys_gated = 0
 
     start_px = float(closes[0])
     auto_range = p.lower is None or p.upper is None
@@ -94,10 +113,18 @@ def grid_backtest(klines: pd.DataFrame, p: GridParams) -> dict:
     n_in_range = 0
 
     prev = start_px
-    for cur in closes[1:]:
-        cur = float(cur)
+    for k in range(1, len(closes)):
+        cur = float(closes[k])
+        # VIX regime gate: in a high-fear bar, stop ADDING inventory (but still allow sells below)
+        buys_allowed = True
+        if vix_gate:
+            pct = pct_by_date.get(times[k].date() if hasattr(times[k], "date") else times[k])
+            buys_allowed = pct is not None and pct <= p.vix_pct_max
         if cur < prev:   # falling -> fill buy orders between cur and prev, top-down
             for lvl in sorted([b for b in buy_orders if cur <= b < prev], reverse=True):
+                if not buys_allowed:
+                    n_buys_gated += 1
+                    continue
                 cost = qty * lvl
                 cash -= cost * (1 + p.fee_rate)
                 fees += cost * p.fee_rate
@@ -164,5 +191,7 @@ def grid_backtest(klines: pd.DataFrame, p: GridParams) -> dict:
         "pct_time_in_range": round(100.0 * n_in_range / n_bars, 1),
         "pct_time_below_lower": round(100.0 * n_below_range / n_bars, 1),
         "n_bars": n_bars,
+        "vix_gated": vix_gate,
+        "buys_skipped_by_vix": n_buys_gated,
         "_equity_curve": eq,    # for charting; tools strip the leading underscore keys
     }

@@ -11,6 +11,23 @@ def _klines(prices):
     return pd.DataFrame({"close": prices}, index=idx)
 
 
+def test_grid_vix_gate_blocks_buys_when_fear_high():
+    osc = [100 + 10 * np.sin(i / 2.0) for i in range(400)]
+    kl = _klines(osc)
+    dates = sorted({ts.date() for ts in kl.index})
+    vix = pd.Series([15.0 + i for i in range(len(dates))], index=dates)  # increasing -> pct=100/day
+    base = grid_backtest(kl, GridParams(lower=90, upper=110, n_grids=20, fee_rate=0.0))
+
+    allow = grid_backtest(kl, GridParams(lower=90, upper=110, n_grids=20, fee_rate=0.0,
+                                         vix_pct_max=100.0), vix=vix)
+    assert allow["vix_gated"] is True
+    assert allow["n_buys"] == base["n_buys"] and allow["buys_skipped_by_vix"] == 0
+
+    block = grid_backtest(kl, GridParams(lower=90, upper=110, n_grids=20, fee_rate=0.0,
+                                         vix_pct_max=50.0), vix=vix)
+    assert block["n_buys"] == 0 and block["buys_skipped_by_vix"] > 0   # all adds suppressed
+
+
 def test_grid_profits_in_oscillating_range():
     # sawtooth oscillating 90<->110 around a flat mean -> grid books roundtrips, ~no trend
     osc = [100 + 10 * np.sin(i / 2.0) for i in range(400)]

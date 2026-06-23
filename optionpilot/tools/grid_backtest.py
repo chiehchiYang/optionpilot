@@ -30,14 +30,23 @@ PARAMETERS = {
         "spacing": {"type": "string", "enum": ["arith", "geom"], "default": "arith"},
         "include_funding": {"type": "boolean", "default": True,
                             "description": "Apply the mean funding rate as a long-carry drag."},
+        "vix_pct_max": {"type": "number", "default": 60.0,
+                        "description": "VIX regime gate: also run a variant that only ADDS "
+                                       "inventory when VIX percentile <= this (grids prefer calm; "
+                                       "the right fear gauge for US-stock perps). null to skip."},
     },
     "required": ["symbol"],
 }
 
+_KEYS = ["total_return", "buy_hold_return", "excess_vs_buy_hold", "max_drawdown", "n_roundtrips",
+         "open_unrealized_pnl", "funding_paid", "pct_time_below_lower", "buys_skipped_by_vix"]
+
 
 def build(config: Config, approve_spend=None) -> ToolSpec:
     def handler(symbol, interval="1h", bars=1000, n_grids=20, capital=10000.0,
-                lower=None, upper=None, spacing="arith", include_funding=True):
+                lower=None, upper=None, spacing="arith", include_funding=True, vix_pct_max=60.0):
+        from datetime import timedelta
+
         from optionpilot.crypto import funding_summary
         from optionpilot.data import binance
         sym = symbol.upper()
@@ -56,14 +65,37 @@ def build(config: Config, approve_spend=None) -> ToolSpec:
             except Exception:  # noqa: BLE001 - funding drag is optional
                 funding_8h = None
 
-        res = grid_backtest(kl, GridParams(
-            lower=lower, upper=upper, n_grids=int(n_grids), capital=float(capital),
-            spacing=spacing, funding_per_8h=funding_8h))
-        res = {k: v for k, v in res.items() if not k.startswith("_")}  # drop equity-curve array
-        res["symbol"] = sym
-        res["interval"] = interval
+        def gp(**extra):
+            return GridParams(lower=lower, upper=upper, n_grids=int(n_grids),
+                              capital=float(capital), spacing=spacing,
+                              funding_per_8h=funding_8h, **extra)
+
+        def strip(r):
+            return {k: v for k, v in r.items() if not k.startswith("_")}
+
+        res = strip(grid_backtest(kl, gp()))
+        res["symbol"], res["interval"] = sym, interval
         res["funding_per_8h_used"] = funding_8h
-        if res.get("ran") and res.get("auto_range_in_sample"):
+
+        # VIX regime variant (the equity fear gauge — right for US-stock perps)
+        if vix_pct_max is not None:
+            try:
+                from optionpilot.data.market import load_vix
+                from optionpilot.sentiment import vix_regime
+                vstart = (kl.index[0].date() - timedelta(days=365)).isoformat()
+                vend = (kl.index[-1].date() + timedelta(days=1)).isoformat()
+                vix = load_vix(vstart, vend)
+                gated = strip(grid_backtest(kl, gp(vix_pct_max=vix_pct_max), vix=vix))
+                res["vix_now"] = vix_regime(vix)
+                res["regime_gated"] = {k: gated.get(k) for k in _KEYS}
+                res["baseline"] = {k: res.get(k) for k in _KEYS}
+                base_ex, gate_ex = res.get("excess_vs_buy_hold"), gated.get("excess_vs_buy_hold")
+                res["vix_gate_improved"] = (base_ex is not None and gate_ex is not None
+                                            and gate_ex > base_ex)
+            except Exception as e:  # noqa: BLE001 - VIX overlay is a bonus, never block the grid
+                res["vix_note"] = f"VIX regime 變體略過:{e}"
+
+        if res.get("auto_range_in_sample"):
             res["warning"] = ("區間是用整段資料的百分位自動推得(含未來資訊,偏樂觀);實盤必須"
                               "事先設定上下界。請看 pct_time_below_lower 評估跌穿風險。")
         return res
@@ -73,7 +105,10 @@ def build(config: Config, approve_spend=None) -> ToolSpec:
         description="Backtest a long-only GRID bot on a Binance USDⓈ-M perpetual (crypto or "
                     "US-stock perp). Returns booked grid profit vs. stuck-inventory unrealized "
                     "loss, time outside the grid, fees + funding drag, and the buy&hold "
-                    "benchmark. Public data, no API key, no order placement. Use a fine interval "
+                    "benchmark. Also runs a VIX-regime variant (equity fear gauge — the right "
+                    "sentiment for US-stock perps) that only adds inventory when VIX is calm, and "
+                    "reports whether that gate helped. Public data, no API key, no order "
+                    "placement. Use a fine interval "
                     "(15m/1h). For range-bound names a grid shines; in a downtrend it bleeds — "
                     "the result shows which.",
         parameters=PARAMETERS,

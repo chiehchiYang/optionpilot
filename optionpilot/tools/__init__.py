@@ -18,8 +18,10 @@ from optionpilot.tools import (
     grid_backtest,
     list_experiments,
     make_charts,
+    market_sentiment,
     measure_vrp,
     optimize_strategy,
+    regime_backtest,
     run_backtest,
     show_trajectory,
     support_resistance,
@@ -36,15 +38,20 @@ OPTIONS_BUILDERS = [
     measure_vrp.build,
     make_charts.build,
     support_resistance.build,
+    regime_backtest.build,
+    market_sentiment.build,
     list_experiments.build,
     show_trajectory.build,
 ]
 
-# Perp-desk tool set (isolated): Binance USDⓈ-M funding carry + grid backtest.
+# Perp-desk tool set (isolated): Binance USDⓈ-M funding carry + grid backtest. Its perps are
+# US-stock underlyings, so the equity fear gauge (VIX, via market_sentiment) is the right
+# sentiment here — not crypto sentiment.
 CRYPTO_BUILDERS = [
     ask_user.build,
     funding_analysis.build,
     grid_backtest.build,
+    market_sentiment.build,
     list_experiments.build,
     show_trajectory.build,
 ]
