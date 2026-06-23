@@ -10,7 +10,8 @@ venv/
 
 # Env / secrets
 .env
-.env.local
+.env.*
+!.env.example
 api.txt
 *.key
 secrets.*

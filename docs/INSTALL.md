@@ -4,6 +4,10 @@ Full setup for the four pieces: the Python package, an LLM (local or hosted), an
 sources (Databento and/or free ThetaData). Paths below match this machine
 (`/media/user/data2/chiehchi/...`); adjust for another box.
 
+> **On a Mac (Intel or Apple Silicon)?** The local vLLM steps below are NVIDIA-only. See
+> **[deploy_mac.md](deploy_mac.md)** for the Mac path (Ollama on Apple Silicon / cloud on Intel) —
+> or just run `bash scripts/setup_mac.sh`.
+
 ## 0. Prerequisites
 
 - **Python 3.11+** (this box: 3.13) and **uv** (`uv --version`).
