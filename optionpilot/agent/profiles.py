@@ -15,6 +15,7 @@ from optionpilot.agent.loop import (
     OPTIONS_SYSTEM_PROMPT,
     ExperimentLoop,
 )
+from optionpilot.agent.memory import recall
 from optionpilot.agent.playbook import CRYPTO_PLAYBOOK, RESEARCH_PLAYBOOK
 from optionpilot.agent.router import ToolRouter
 from optionpilot.config import Config
@@ -58,6 +59,7 @@ def build_loop(config: Config, profile: Profile, approve_spend=None, interactive
     router = ToolRouter()
     register_tools(router, config, list(profile.builders), approve_spend=approve_spend,
                    interactive=interactive)
+    memory = recall(config.runs_dir, profile.key)  # this desk's prior research, injected at start
     return ExperimentLoop(config, router, on_event=on_event,
                           system_prompt=profile.system_prompt, playbook=profile.playbook,
-                          profile_key=profile.key)
+                          profile_key=profile.key, memory=memory)

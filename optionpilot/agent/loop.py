@@ -113,9 +113,10 @@ def _tools_section(router) -> str:
 
 
 def _system_prompt(today: str, router=None, base_prompt: str = OPTIONS_SYSTEM_PROMPT,
-                   playbook: str = RESEARCH_PLAYBOOK) -> str:
+                   playbook: str = RESEARCH_PLAYBOOK, memory: str = "") -> str:
     tools = f"\n\n{_tools_section(router)}" if router is not None else ""
-    return f"{base_prompt}\n\nThe current date is {today}.\n\n{playbook}{tools}"
+    mem = f"\n\n{memory}" if memory else ""
+    return f"{base_prompt}\n\nThe current date is {today}.\n\n{playbook}{tools}{mem}"
 
 
 class ExperimentLoop:
@@ -129,6 +130,7 @@ class ExperimentLoop:
         playbook: str = RESEARCH_PLAYBOOK,
         profile_key: str = "options",
         persist_trajectory: bool = True,
+        memory: str = "",
     ):
         self.config = config
         self.router = router
@@ -142,7 +144,7 @@ class ExperimentLoop:
         # on_event(kind, text): surfaces tool activity to the UI; defaults to stderr.
         self.on_event = on_event or self._default_event
         self.context.add("system", _system_prompt(date.today().isoformat(), router,
-                                                   system_prompt, playbook))
+                                                   system_prompt, playbook, memory))
 
     @staticmethod
     def _default_event(kind: str, text: str) -> None:
