@@ -428,7 +428,6 @@ def covered_call_backtest(
             break
         called_away = s_exp > strike
         commissions = p.commission_per_contract * (2 if called_away else 1)
-        days_held = max((expiry - entry).days, 0)
         interest = 0.0  # covered call capital is in shares, not cash collateral
         # per-share: stock marked at min(S_exp, strike) (called away at strike) minus basis, + premium
         pnl = (min(s_exp, strike) - spot + premium) * 100.0 - commissions + interest

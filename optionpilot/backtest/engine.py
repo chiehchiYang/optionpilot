@@ -15,8 +15,6 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from optionpilot.backtest.metrics import summarize
-
 
 @dataclass
 class BacktestResult:

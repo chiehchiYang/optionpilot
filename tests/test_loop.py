@@ -6,8 +6,6 @@ The fake mimics the LiteLLM response shape (resp.choices[0].message with .conten
 
 from types import SimpleNamespace
 
-import pytest
-
 from optionpilot.agent.loop import ExperimentLoop
 from optionpilot.agent.router import ToolRouter
 from optionpilot.config import Config
@@ -87,7 +85,9 @@ def test_bad_json_args_recovers():
 
 def test_doom_loop_blocks_repeated_identical_call():
     router, seen = _echo_router()
-    same = lambda: _toolcall("c", "echo_tool", '{"x": 1}')
+
+    def same():
+        return _toolcall("c", "echo_tool", '{"x": 1}')
     scripted = [
         _resp(_msg(content="", tool_calls=[same()])),  # 1: runs
         _resp(_msg(content="", tool_calls=[same()])),  # 2: runs
