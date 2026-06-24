@@ -37,6 +37,10 @@ class GridParams:
     # bar whose VIX expanding-percentile (lookahead-free) is <= this. Sells are always allowed, so
     # the grid de-risks but stops catching the knife when equity fear is high. None = no gate.
     vix_pct_max: float | None = None
+    # Optional COMPOSITE regime gate: like vix_pct_max but on a precomputed per-bar risk
+    # percentile (sentiment.perp_risk_series — blends vol/funding/long-short/VIX). Pass that
+    # series as grid_backtest(..., regime=...). Only ADD inventory when its value is <= this.
+    regime_pct_max: float | None = None
 
 
 def _grid_lines(lower: float, upper: float, n: int, spacing: str) -> np.ndarray:
@@ -52,11 +56,14 @@ def _drawdown(equity: np.ndarray) -> float:
     return float((equity / peak - 1.0).min())
 
 
-def grid_backtest(klines: pd.DataFrame, p: GridParams, vix: pd.Series | None = None) -> dict:
+def grid_backtest(klines: pd.DataFrame, p: GridParams, vix: pd.Series | None = None,
+                  regime: pd.Series | None = None) -> dict:
     """Run the long-only grid over a klines frame (needs a 'close' column, time-sorted index).
 
     vix: optional VIX series (by date). With params.vix_pct_max set, new buys are gated to
-    calm-regime bars (lookahead-free expanding percentile); sells are never gated."""
+    calm-regime bars (lookahead-free expanding percentile); sells are never gated.
+    regime: optional per-bar composite risk percentile (sentiment.perp_risk_series, indexed by
+    the klines index). With params.regime_pct_max set, buys are gated the same way; sells aren't."""
     if klines is None or klines.empty or "close" not in klines:
         return {"ran": False, "reason": "沒有 K 線資料"}
     closes = klines["close"].astype(float).to_numpy()
@@ -73,6 +80,9 @@ def grid_backtest(klines: pd.DataFrame, p: GridParams, vix: pd.Series | None = N
             d = ts.date() if hasattr(ts, "date") else ts
             if d not in pct_by_date:
                 pct_by_date[d] = expanding_pct_rank(vix, d)
+    # optional composite regime gate: a precomputed per-bar risk percentile aligned to the klines
+    regime_gate = regime is not None and p.regime_pct_max is not None
+    regime_vals = regime.reindex(klines.index).to_numpy() if regime_gate else None
     n_buys_gated = 0
 
     start_px = float(closes[0])
@@ -120,6 +130,9 @@ def grid_backtest(klines: pd.DataFrame, p: GridParams, vix: pd.Series | None = N
         if vix_gate:
             pct = pct_by_date.get(times[k].date() if hasattr(times[k], "date") else times[k])
             buys_allowed = pct is not None and pct <= p.vix_pct_max
+        if regime_gate:
+            rp = regime_vals[k]
+            buys_allowed = buys_allowed and not np.isnan(rp) and rp <= p.regime_pct_max
         if cur < prev:   # falling -> fill buy orders between cur and prev, top-down
             for lvl in sorted([b for b in buy_orders if cur <= b < prev], reverse=True):
                 if not buys_allowed:
@@ -192,6 +205,8 @@ def grid_backtest(klines: pd.DataFrame, p: GridParams, vix: pd.Series | None = N
         "pct_time_below_lower": round(100.0 * n_below_range / n_bars, 1),
         "n_bars": n_bars,
         "vix_gated": vix_gate,
-        "buys_skipped_by_vix": n_buys_gated,
+        "composite_gated": regime_gate,
+        "buys_skipped_by_vix": n_buys_gated if vix_gate else 0,
+        "buys_skipped_by_composite": n_buys_gated if regime_gate else 0,
         "_equity_curve": eq,    # for charting; tools strip the leading underscore keys
     }

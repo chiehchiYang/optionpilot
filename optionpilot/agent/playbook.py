@@ -88,6 +88,11 @@ funding/OI/long-short are the CONTRACT-side crowd (crypto-native traders), while
 UNDERLYING-EQUITY side (risk-off in stocks). grid_backtest runs a VIX-regime variant (only add
 inventory when VIX percentile <= a cap, since grids bleed in risk-off trends) — believe the gate
 only if vix_gate_improved is true AND it didn't gut the trade count.
+It ALSO runs a COMPOSITE-regime variant (composite_now / composite_variant): one blended risk
+percentile from vol + funding + long/short + VIX (the perp analog of a sentiment composite index).
+It fuses both crowd angles above into a single "how risky to ADD longs now" read. Same rule:
+believe it only if composite_gate_improved is true and the trade count survives; compare it head
+to head with the VIX-only gate — sometimes the simpler one wins, and you must say so.
 
 NON-NEGOTIABLE PRINCIPLES (same spirit as the options desk):
 - Always judge against buy&hold. Surface negative/inconclusive results rather than dressing
