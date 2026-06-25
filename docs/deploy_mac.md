@@ -168,3 +168,23 @@ uv run optionpilot-ui                                                      # GUI
 
 `scripts/setup_vllm.sh` 與 `scripts/serve_local.sh` 是 **NVIDIA/CUDA 專用**(Blackwell/cu128 釘版),
 Mac 上**不要執行**。Mac 用 `scripts/setup_mac.sh` 取代它們。
+
+---
+
+## 8. 已裝好的機器,如何更新
+
+是 editable 安裝,**純程式碼改動 `git pull` 完即生效、不用重裝**。不必再跑一次 `setup_mac.sh`。
+
+```bash
+cd /path/to/optionpilot
+git pull
+# 依環境管理器重新同步相依(只有 pyproject 改了才需要,但跑一下最保險、沒變更就是 no-op):
+uv sync --extra data --extra ui                                # uv
+# 或：source .venv/bin/activate && pip install -e ".[data,ui]"     # venv
+# 或：conda activate optionpilot && pip install -e ".[data,ui]"    # conda
+```
+
+**你的設定與資料不會被動到**(都在 `.gitignore`):`.env`(key)、`runs/`(實驗紀錄 / trajectories /
+跨 session 記憶)、`data_cache/`。所以更新很安全。UI/agent 若開著,**Ctrl-C 後重開**才會載到新程式碼;
+本地 Ollama 不受影響、不用動。若你改過被追蹤的檔案導致 pull 衝突:`git stash` → `git pull` →
+`git stash pop`。

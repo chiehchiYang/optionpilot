@@ -84,3 +84,20 @@ uv run optionpilot                                                      # intera
 ```
 
 Reports are auto-saved to `runs/` and logged to `runs/experiments.duckdb`.
+
+## 6. Updating an existing install
+
+It's an editable install, so a `git pull` is usually enough — pure code changes take effect with
+no reinstall.
+
+```bash
+cd /path/to/optionpilot
+git pull
+uv sync --extra dev --extra data        # only strictly needed if pyproject.toml changed; safe to run
+uv run pytest -q                         # sanity (optional)
+```
+
+Your `.env`, `runs/` (experiments, trajectories, cross-session memory) and `data_cache/` are all
+gitignored, so `git pull` never touches your keys or research history. Restart the UI/agent if it's
+running (Ctrl-C then relaunch) so it picks up the new code. The separate `vllm-env` is unaffected.
+If you've edited tracked files and `git pull` conflicts: `git stash` → `git pull` → `git stash pop`.
