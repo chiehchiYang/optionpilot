@@ -52,6 +52,34 @@ class CSPResult:
     trades: list[dict] = field(default_factory=list)
     returns: np.ndarray = field(default_factory=lambda: np.array([]))
     metrics: dict = field(default_factory=dict)
+    diagnostics: dict = field(default_factory=dict)
+
+
+def _chain_coverage(opt_df: pd.DataFrame, calendar: list) -> dict:
+    """What the fetched option chain actually contained — lets you tell a THIN-DATA run from a
+    by-design low-trade run."""
+    return {
+        "n_chain_dates": len(calendar),
+        "first_date": str(calendar[0]) if calendar else None,
+        "last_date": str(calendar[-1]) if calendar else None,
+        "n_expiries": int(opt_df["expiry"].nunique()) if "expiry" in opt_df.columns else 0,
+        "n_strikes": int(opt_df["strike"].nunique()) if "strike" in opt_df.columns else 0,
+        "n_rows": int(len(opt_df)),
+    }
+
+
+def _low_trade_reason(evaluated: int, skips: dict, p) -> str:
+    """One human sentence: why so few trades — data coverage vs. liquidity vs. by-design."""
+    half = max(1, evaluated // 2)
+    if evaluated and skips.get("no_contract_in_dte_window", 0) >= half:
+        return ("多數進場日在 DTE 視窗內找不到合約 → 偏向資料覆蓋不足(免費來源 chain 稀疏);"
+                "改用 Databento 或放寬 dte_min/dte_max。")
+    if evaluated and skips.get("liquidity", 0) >= half:
+        return "多數合約被流動性門檻擋掉 → 調低 min_contract_volume 或換更完整的資料。"
+    if p.entry_every_days == 0:
+        return ("非重疊持有到期(設計):筆數 ≈ 期間 / 持有天數,本來就少;要更多筆就設 "
+                "entry_every_days(會重疊、Sharpe 會膨脹)或縮短 DTE。")
+    return "筆數受回測期間長度限制;拉長回測期間可增加。"
 
 
 def _asof_price(dates: list, prices: list, d) -> float | None:
@@ -142,13 +170,15 @@ def cash_secured_put_backtest(
     u_prices = [float(x) for x in u.values]
 
     trades: list[dict] = []
-    liquidity_skips = 0
+    liquidity_skips = no_underlying = no_contract = vix_skips = evaluated = 0
     step = p.entry_every_days if p.entry_every_days > 0 else 1
     i = 0
     while i < len(calendar):
         entry = calendar[i]
+        evaluated += 1
         spot = _asof_price(u_dates, u_prices, entry)
         if spot is None or spot <= 0:
+            no_underlying += 1
             i += step
             continue
 
@@ -157,6 +187,7 @@ def cash_secured_put_backtest(
             if (pct is None
                     or (p.vix_pct_min is not None and pct < p.vix_pct_min)
                     or (p.vix_pct_max is not None and pct > p.vix_pct_max)):
+                vix_skips += 1
                 i += step
                 continue
 
@@ -166,6 +197,7 @@ def cash_secured_put_backtest(
         cands = cands[(cands["expiry"] >= lo) & (cands["expiry"] <= hi)
                       & (cands["strike"] <= spot)]  # OTM puts only
         if cands.empty:
+            no_contract += 1
             i += step
             continue
 
@@ -212,8 +244,16 @@ def cash_secured_put_backtest(
         # advance: by cadence (overlap allowed) or, sequentially, to past this expiry
         i = (i + step) if p.entry_every_days > 0 else bisect.bisect_right(calendar, expiry)
 
+    skips = {"no_underlying_price": no_underlying, "no_contract_in_dte_window": no_contract,
+             "vix_regime": vix_skips, "liquidity": liquidity_skips}
+    diagnostics = {
+        "candidate_entry_dates": len(calendar), "entries_evaluated": evaluated,
+        "trades_made": len(trades), "skips": skips,
+        "chain_coverage": _chain_coverage(puts, calendar),
+        "low_trade_count_reason": _low_trade_reason(evaluated, skips, p),
+    }
     returns, metrics = _summarize(trades, p, liquidity_skips, u_dates, u_prices)
-    return CSPResult(trades=trades, returns=returns, metrics=metrics)
+    return CSPResult(trades=trades, returns=returns, metrics=metrics, diagnostics=diagnostics)
 
 
 def wheel_backtest(
@@ -355,7 +395,12 @@ def wheel_backtest(
     if s0 and s1 and s0 > 0:
         metrics["benchmark_buy_hold"] = s1 / s0 - 1.0
         metrics["excess_vs_buy_hold"] = metrics["total_return"] - (s1 / s0 - 1.0)
-    return CSPResult(trades=trades, returns=step_returns, metrics=metrics)
+    diagnostics = {
+        "trades_made": len(trades),
+        "chain_coverage": _chain_coverage(opt_df, calendar),
+        "low_trade_count_reason": _low_trade_reason(0, {}, p),
+    }
+    return CSPResult(trades=trades, returns=step_returns, metrics=metrics, diagnostics=diagnostics)
 
 
 def covered_call_backtest(
@@ -389,12 +434,15 @@ def covered_call_backtest(
     u_prices = [float(x) for x in u.values]
 
     trades, liquidity_skips = [], 0
+    no_underlying = no_contract = evaluated = 0
     step = p.entry_every_days if p.entry_every_days > 0 else 1
     i = 0
     while i < len(calendar):
         entry = calendar[i]
+        evaluated += 1
         spot = _asof_price(u_dates, u_prices, entry)
         if spot is None or spot <= 0:
+            no_underlying += 1
             i += step
             continue
         cands = by_date[entry]
@@ -403,6 +451,7 @@ def covered_call_backtest(
         cands = cands[(cands["expiry"] >= lo) & (cands["expiry"] <= hi)
                       & (cands["strike"] >= spot)]  # OTM calls only
         if cands.empty:
+            no_contract += 1
             i += step
             continue
         if p.min_contract_volume > 0:
@@ -441,5 +490,13 @@ def covered_call_backtest(
         })
         i = (i + step) if p.entry_every_days > 0 else bisect.bisect_right(calendar, expiry)
 
+    skips = {"no_underlying_price": no_underlying, "no_contract_in_dte_window": no_contract,
+             "liquidity": liquidity_skips}
+    diagnostics = {
+        "candidate_entry_dates": len(calendar), "entries_evaluated": evaluated,
+        "trades_made": len(trades), "skips": skips,
+        "chain_coverage": _chain_coverage(calls, calendar),
+        "low_trade_count_reason": _low_trade_reason(evaluated, skips, p),
+    }
     returns, metrics = _summarize(trades, p, liquidity_skips, u_dates, u_prices)
-    return CSPResult(trades=trades, returns=returns, metrics=metrics)
+    return CSPResult(trades=trades, returns=returns, metrics=metrics, diagnostics=diagnostics)

@@ -71,10 +71,13 @@ def build(config: Config, approve_spend=None) -> ToolSpec:
                            entry_every_days=entry_every_days)
         res = backtests[strategy](opt, under, params)
         if not res.metrics:
-            return {"ticker": ticker, "n_trades": 0, "note": "no trades generated for these params"}
+            return {"ticker": ticker.upper(), "strategy": strategy, "n_trades": 0,
+                    "note": "no trades generated for these params",
+                    "diagnostics": res.diagnostics}   # WHY: chain coverage + skip breakdown
         m = {k: (round(v, 4) if isinstance(v, float) else v) for k, v in res.metrics.items()}
         m["ticker"] = ticker.upper()
         m["strategy"] = strategy
+        m["diagnostics"] = res.diagnostics   # is a low n_trades by-design or thin data? see here
 
         # auto-save: log to the experiment DB + write a Markdown report under runs/
         run_params = {"target_moneyness": target_moneyness, "dte_min": dte_min,
