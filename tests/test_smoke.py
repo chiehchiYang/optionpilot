@@ -69,4 +69,5 @@ def test_default_tools_build():
     assert names == {"ask_user", "fetch_options_data", "run_backtest", "optimize_strategy",
                      "detect_unusual_activity", "measure_vrp", "make_charts",
                      "support_resistance", "regime_backtest", "market_sentiment",
+                     "stock_scanner", "multi_factor_analysis",
                      "list_experiments", "show_trajectory"}

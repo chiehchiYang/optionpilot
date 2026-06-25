@@ -20,10 +20,12 @@ from optionpilot.tools import (
     make_charts,
     market_sentiment,
     measure_vrp,
+    multi_factor,
     optimize_strategy,
     regime_backtest,
     run_backtest,
     show_trajectory,
+    stock_scanner,
     support_resistance,
 )
 from optionpilot.tools.base import ToolSpec
@@ -40,6 +42,8 @@ OPTIONS_BUILDERS = [
     support_resistance.build,
     regime_backtest.build,
     market_sentiment.build,
+    stock_scanner.build,
+    multi_factor.build,
     list_experiments.build,
     show_trajectory.build,
 ]

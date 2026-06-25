@@ -45,6 +45,15 @@ filtered result actually beats the unfiltered one out-of-sample, and watch the f
 count (a regime filter that leaves <10 trades is noise). The IV-vs-realized gap (measure_vrp) and
 the put/call ratio are also sentiment reads you already have.
 
+SCREENING (熱門股掃描 / 多維分析): stock_scanner ranks a basket and multi_factor_analysis scores one
+name across four equal-weighted dimensions — technical, sentiment, fundamental, valuation — as
+CROSS-SECTIONAL percentiles (a name is "cheap"/"strong" only vs its peers), plus a 'hotness'
+trending rank. Use these to GENERATE candidates / quantify where a name sits, not to decide a
+trade: the scores are a transparent screen with no fitted weights and no out-of-sample proof. The
+sentiment dimension is a price-action proxy (we have no news-NLP or institutional flow). ALWAYS
+turn anything they surface into a concrete hypothesis and run it through run_backtest /
+regime_backtest before believing it — the screen proposes, the backtest disposes.
+
 DATA: ThetaData (free, recent ~2yr, real bid/ask + volume) is the default; Databento (deep
 history, costs money, approval-gated) is for older/uncovered tickers. New tickers with only a
 few months of options history cannot be meaningfully backtested — say so.
