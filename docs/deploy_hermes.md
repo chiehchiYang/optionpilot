@@ -33,6 +33,16 @@ Hermes 的 LLM 亂編排、丟失紀律。
 它提供兩個工具,Hermes 加前綴後是 **`mcp_optionpilot_chat`** 與 **`mcp_optionpilot_reset`**。
 **只用免費資料源** —— 付費 Databento 一律自動拒絕,WhatsApp 那端永遠不會花到錢。
 
+**回覆模式(對齊 GUI)**:`chat` 回的內容跟 Gradio GUI 一樣 —— **工具活動軌跡(🔧 …)+ `---` +
+最終結論 + 該輪產生的圖表**。兩個環境變數可調(預設都開):
+- `OPTIONPILOT_MCP_SHOW_STEPS=0` 關掉步驟軌跡(只回結論,適合手機嫌吵時)
+- `OPTIONPILOT_MCP_RETURN_IMAGES=0` 關掉圖表
+
+> ⚠️ 兩個與 GUI 的差異:① **不是即時串流** —— 一次 MCP 呼叫只回一次,軌跡會跟結論「最後一起到」
+> (要逐步即時,靠 `/op` skill 先回「研究中…」)。② **圖表要 Hermes 幫忙轉**:我們已把圖以 MCP
+> image content 回出去,但**最終能不能在 WhatsApp 顯示,取決於 Hermes 是否把 MCP 圖片轉成媒體訊息
+> 送出**(它會送語音/GIF,圖片應該也行,但請實測)。轉不出來就退回純文字,不會壞。
+
 ## 3. 把它接到 Hermes(`~/.hermes/config.yaml`)
 
 Hermes 的 MCP server 設定在 `~/.hermes/config.yaml` 的 `mcp_servers` 區段。加上:
