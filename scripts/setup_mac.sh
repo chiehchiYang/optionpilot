@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Set up OptionPilot on macOS — the Mac counterpart to setup_vllm.sh/serve_local.sh (NVIDIA-only,
 # do NOT run those here). Picks an environment manager, installs the package into an isolated env,
-# ASKS which LLM backend to use (default by chip), prompts for an API key on the cloud path, and
-# VERIFIES the LLM works with a tiny test request.
+# ASKS which LLM backend to use (default by chip), prompts for an API key on the cloud path,
+# VERIFIES the LLM works with a tiny test request, and OPTIONALLY sets up options-desk data
+# sources (Databento key / ThetaData: Java 21 + terminal jar — the perp desk & screener need none).
 #
 # Env manager priority:  uv (if present)  ->  conda (if present)  ->  ask: install uv | venv+pip
 # Non-interactive (CI): -y / OPTIONPILOT_NONINTERACTIVE=1 uses the chip default, installs uv if
@@ -35,6 +36,38 @@ except Exception as e:  # noqa: BLE001
 PY
   then echo "    ✅ LLM 可用"; return 0
   else echo "    ❌ 測試失敗(檢查 key / 額度 / 網路 / 模型名 / ollama serve 是否啟動)"; return 1; fi
+}
+
+# --- options-desk data-source helpers (append to $TARGET, which is set later) ---
+append_env() { printf '%s\n' "$@" >> "$TARGET"; }
+
+setup_databento_key() {
+  read -r -s -p "    貼上 DATABENTO_API_KEY (db-...): " DBK; echo
+  append_env "DATABENTO_API_KEY=${DBK}"
+  echo "    ✅ Databento key 已寫入(Python SDK 已隨 --extra data 裝好)。"
+}
+
+install_thetadata() {
+  if java -version 2>&1 | grep -q 'version "21'; then
+    echo "    Java 21 已存在。"
+  elif command -v brew >/dev/null 2>&1; then
+    echo "==> brew install --cask temurin@21 …"
+    brew install --cask temurin@21 || echo "!! Java 安裝失敗,請手動裝 JRE/JDK 21。"
+  else
+    echo "!! 沒有 Homebrew;請自行安裝 Java 21(temurin)。"
+  fi
+  local jar="$PWD/ThetaTerminalv3.jar"
+  if [ -f "$jar" ]; then
+    echo "    ThetaTerminalv3.jar 已存在。"
+  else
+    echo "==> 下載 ThetaTerminalv3.jar …"
+    curl -fsSL -o "$jar" "https://download-unstable.thetadata.us/ThetaTerminalv3.jar" \
+      || echo "!! 下載失敗,請手動從 download-unstable.thetadata.us 取得 ThetaTerminalv3.jar 放專案根。"
+  fi
+  append_env "OPTIONPILOT_THETADATA_URL=http://127.0.0.1:25503"
+  read -r -p "    你的 ThetaData API key(td1_…,用來啟動終端,不會存檔): " THK
+  echo "    ✅ 用資料前,另開一個終端執行並保持開著:"
+  echo "        java -jar \"$jar\" --api-key ${THK:-td1_your_key}"
 }
 
 # --- pick an environment manager + install OptionPilot into an isolated env ---
@@ -139,8 +172,6 @@ case "$CHOICE" in
       echo "OPTIONPILOT_MODEL=ollama_chat/${MODEL_TAG}"
       echo "OPTIONPILOT_API_BASE=http://localhost:11434"
       echo "OPTIONPILOT_API_KEY=ollama"
-      echo "OPTIONPILOT_DATA_SOURCE=thetadata"
-      echo "# DATABENTO_API_KEY=db-..."
     } > "$TARGET"
     if command -v ollama >/dev/null 2>&1; then
       echo "==> Pulling ${MODEL_TAG} (can take a while)…"
@@ -165,7 +196,6 @@ case "$CHOICE" in
         echo "DEEPSEEK_API_KEY="
         echo "# OPTIONPILOT_MODEL=anthropic/claude-sonnet-4-6"
         echo "# ANTHROPIC_API_KEY="
-        echo "OPTIONPILOT_DATA_SOURCE=thetadata"
       } > "$TARGET"
       echo "!! Edit $TARGET, add your key, then verify with 'bash scripts/setup_mac.sh -y' or run optionpilot."
     else
@@ -180,16 +210,13 @@ case "$CHOICE" in
       if [ -z "$MODEL" ]; then
         echo "==> 其他供應商:請依 LiteLLM 文件手動設定 $TARGET(OPTIONPILOT_MODEL + 對應 key)。"
         { echo "# OptionPilot — cloud LLM (set model + provider key per LiteLLM docs)"
-          echo "OPTIONPILOT_MODEL="
-          echo "OPTIONPILOT_DATA_SOURCE=thetadata"; } > "$TARGET"
+          echo "OPTIONPILOT_MODEL="; } > "$TARGET"
       else
         read -r -s -p "    貼上 ${KEYVAR}: " APIKEY; echo
         {
           echo "# OptionPilot — cloud LLM"
           echo "OPTIONPILOT_MODEL=${MODEL}"
           echo "${KEYVAR}=${APIKEY}"
-          echo "OPTIONPILOT_DATA_SOURCE=thetadata"
-          echo "# DATABENTO_API_KEY=db-..."
         } > "$TARGET"
         export "${KEYVAR}=${APIKEY}"
         verify_llm "$MODEL" || echo "    (.env 已寫好;修正 key/額度後可重跑驗證。)"
@@ -202,6 +229,29 @@ case "$CHOICE" in
     TARGET="(none)"
     ;;
 esac
+
+# --- optional: OPTIONS-desk data sources (perp desk / stock screener / VIX need NO key) ---
+if [ "$NONINTERACTIVE" = "1" ]; then
+  echo "==> 跳過選擇權資料源(非互動);需要時見 docs/deploy_mac.md §4。"
+elif [ "$TARGET" != "(none)" ]; then
+  echo
+  echo "    要設定「選擇權」資料源嗎?(幣安永續台 / 選股 screener / VIX 都不需要 key)"
+  echo "      1) 不用,跳過"
+  echo "      2) Databento(深歷史,付費,雲端)"
+  echo "      3) ThetaData(免費近2年,本地 Java 終端)"
+  echo "      4) 兩個都設"
+  read -r -p "    請選 [1]: " DSRC; DSRC="${DSRC:-1}"
+  case "$DSRC" in
+    2) append_env "" "# --- options data ---" "OPTIONPILOT_DATA_SOURCE=databento"
+       setup_databento_key ;;
+    3) append_env "" "# --- options data ---" "OPTIONPILOT_DATA_SOURCE=thetadata"
+       install_thetadata ;;
+    4) append_env "" "# --- options data ---" "OPTIONPILOT_DATA_SOURCE=thetadata"
+       setup_databento_key; install_thetadata
+       echo "    (兩者皆設;預設 thetadata,要改用 databento 就改 $TARGET 的 OPTIONPILOT_DATA_SOURCE)" ;;
+    *) echo "==> 跳過資料源。需要選擇權真實 chain 時再設(docs/deploy_mac.md §4)。" ;;
+  esac
+fi
 
 echo
 [ "$TARGET" = "(none)" ] || echo "==> Wrote $TARGET"

@@ -109,18 +109,29 @@ LiteLLM 會依 model 前綴自動找對應的 provider key。
 
 ---
 
-## 4. 資料來源(兩台 Mac 都一樣)
+## 4. 資料來源(哪些功能需要 key)
 
-- **幣安永續台**:零設定 —— 全用公開 API(`fapi.binance.com`),免 key、不下單。
-- **期權台**:
-  - **ThetaData**(免費,近 ~2yr):需 **Java 21** + v3 終端,Mac 可跑。
-    ```bash
-    brew install --cask temurin@21              # 或任何 JRE/JDK 21
-    java -jar ThetaTerminalv3.jar --api-key td1_your_key   # 等 "Starting server at ...:25503"
-    ```
-    然後 `OPTIONPILOT_DATA_SOURCE=thetadata`。細節見 [thetadata_setup.md](thetadata_setup.md)。
-  - **Databento**(深歷史、付費):`DATABENTO_API_KEY=db-...` + `OPTIONPILOT_DATA_SOURCE=databento`;
-    有 `OPTIONPILOT_MAX_FETCH_USD` 成本守門。
+**多數功能不需要任何資料 key** —— 只有「選擇權真實 chain 回測」才需要 ThetaData 或 Databento:
+
+| 功能 | 需要的資料 key |
+|---|---|
+| 幣安永續台(funding / 網格回測) | 無(公開 API `fapi.binance.com`,不下單) |
+| 選股 screener / 多維分析 | 無(yfinance) |
+| 市場情緒 VIX | 無(yfinance) |
+| **選擇權回測**(CSP / covered call / wheel…) | **ThetaData 或 Databento(擇一)** |
+
+> **`setup_mac.sh` 可以幫你裝這兩個**:跑到「要設定選擇權資料源嗎?」時選 Databento(輸入 key)、
+> ThetaData(自動 `brew` 裝 Java 21 + 下載 `ThetaTerminalv3.jar` + 給你啟動指令),或兩者。
+> 只玩永續台 / screener 就選「跳過」。手動步驟如下:
+
+- **ThetaData**(免費,近 ~2yr):需 **Java 21** + v3 終端,Mac 可跑。
+  ```bash
+  brew install --cask temurin@21              # 或任何 JRE/JDK 21
+  java -jar ThetaTerminalv3.jar --api-key td1_your_key   # 等 "Starting server at ...:25503"
+  ```
+  然後 `OPTIONPILOT_DATA_SOURCE=thetadata`。細節見 [thetadata_setup.md](thetadata_setup.md)。
+- **Databento**(深歷史、付費):`DATABENTO_API_KEY=db-...` + `OPTIONPILOT_DATA_SOURCE=databento`;
+  有 `OPTIONPILOT_MAX_FETCH_USD` 成本守門。SDK 已隨 `--extra data` 裝好。
 
 ---
 
