@@ -26,31 +26,37 @@ Hermes 的 LLM 亂編排、丟失紀律。
 - **Hermes 裝好,並完成 WhatsApp 設定**(它的 Meta/Baileys 接法見 Hermes 官方文件)。建議用一隻
   **專屬門號**當 bot(WhatsApp Business API 號碼會被佔用,不能同時用在一般 app)。
 
-## 2. 啟動 OptionPilot 的 MCP server
+## 2. MCP server 怎麼跑
 
-stdio transport(由 Hermes 啟動);手動測試:
+是 **stdio**:你**不用**自己常駐它 —— **Hermes 會幫你啟動**(把它當子行程,用 stdin/stdout 溝通)。
+要手動測試可跑 `uv run optionpilot-mcp`(會等 stdio 輸入,Ctrl-C 結束)。
+它提供兩個工具,Hermes 加前綴後是 **`mcp_optionpilot_chat`** 與 **`mcp_optionpilot_reset`**。
+**只用免費資料源** —— 付費 Databento 一律自動拒絕,WhatsApp 那端永遠不會花到錢。
+
+## 3. 把它接到 Hermes(`~/.hermes/config.yaml`)
+
+Hermes 的 MCP server 設定在 `~/.hermes/config.yaml` 的 `mcp_servers` 區段。加上:
+```yaml
+mcp_servers:
+  optionpilot:
+    command: "uv"
+    args: ["run", "--directory", "/path/to/optionpilot", "optionpilot-mcp"]
+    # tools:                       # (可選)只露出我們的兩個工具
+    #   include: [chat, reset]
+```
+用 `uv run --directory <專案路徑>` 讓它在 OptionPilot 專案目錄裡跑,這樣它會讀到該目錄的 **`.env`**
+(OptionPilot 自己的 LLM 後端 key 從這裡來)。
+
+> ⚠️ **環境變數**:Hermes 對 stdio server **不會**自動把你 shell 的環境全帶進去,只帶 `env:` 裡明寫
+> 的。但沒關係 —— OptionPilot 是用專案目錄的 **`.env`** 載入設定(`Config.load()` 會讀 `.env`),
+> 所以 `OPTIONPILOT_MODEL` / 各家 key 放 `.env` 即可,不必寫進 Hermes config。
+
+載入(active session 中)或重啟:
 ```bash
-uv run optionpilot-mcp
+/reload-mcp          # 在 hermes 對話中重載 MCP
+# 或重開:hermes chat
 ```
-它提供兩個工具:`optionpilot_chat(message, conversation_id, desk)` 與 `optionpilot_reset`。
-**只用免費資料源** —— 付費 Databento 抓取一律自動拒絕,所以 WhatsApp 那端永遠不會花到錢。
-
-## 3. 把這個 MCP server 接到 Hermes
-
-Hermes 支援「連接任何 MCP server」(見其 [MCP Integration](https://hermes-agent.nousresearch.com/docs/user-guide/features/mcp))。
-標準的 stdio MCP client 設定長這樣(請依 Hermes 實際的 MCP 設定格式對應):
-```json
-{
-  "mcpServers": {
-    "optionpilot": {
-      "command": "uv",
-      "args": ["run", "optionpilot-mcp"],
-      "cwd": "/path/to/optionpilot"
-    }
-  }
-}
-```
-接好後,Hermes 就能呼叫 `optionpilot_chat`。
+Hermes 啟動時會自動探索並註冊工具,名稱就是 **`mcp_optionpilot_chat`** / **`mcp_optionpilot_reset`**。
 
 ## 4. `/op` 模式 skill(軟鎖 + footer + 進/出確認 + `/end` 後門)
 
@@ -70,7 +76,7 @@ command: op
 
 1. 回一句確認:「已進入 OptionPilot 研究模式(選擇權台)。直接問選擇權/永續/選股/基本面;
    說「結束」或 `/end` 離開。」
-2. **在此模式中,對使用者的每一則訊息都呼叫 `optionpilot_chat` 工具**(conversation_id 用這個
+2. **在此模式中,對使用者的每一則訊息都呼叫 `mcp_optionpilot_chat` 工具**(conversation_id 用這個
    聊天的固定 id),把工具回覆原樣轉述,並在結尾加上:`（OptionPilot 模式 — 說「結束」離開）`。
    不要用你自己的知識回答市場問題。
 3. desk 切換:訊息是 `/perp` 或提到永續/合約/funding/網格 → desk="crypto";`/options` 或選擇權/

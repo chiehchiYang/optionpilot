@@ -80,14 +80,15 @@ def build_mcp(config: Config | None = None):
     sessions = DeskSessions(config or Config.load())
     server = FastMCP("optionpilot")
 
+    # Hermes registers MCP tools as mcp_<server>_<tool>, so these become mcp_optionpilot_chat /
+    # mcp_optionpilot_reset.
     @server.tool(description=_CHAT_DESC)
-    def optionpilot_chat(message: str, conversation_id: str = "default",
-                         desk: str = "options") -> str:
+    def chat(message: str, conversation_id: str = "default", desk: str = "options") -> str:
         return research(sessions, message, conversation_id, desk)
 
     @server.tool(description="Clear the OptionPilot conversation session (start the research "
                              "context fresh for this chat).")
-    def optionpilot_reset(conversation_id: str = "default") -> str:
+    def reset(conversation_id: str = "default") -> str:
         n = sessions.reset(conversation_id)
         return f"已清除 {n} 個 OptionPilot session。"
 
