@@ -31,6 +31,9 @@ models = [
 ui = [
     "gradio>=6.0",
 ]
+mcp = [
+    "mcp>=1.2",
+]
 dev = [
     "pytest>=8.0",
     "ruff>=0.5",
@@ -39,6 +42,7 @@ dev = [
 [project.scripts]
 optionpilot = "optionpilot.cli:app"
 optionpilot-ui = "optionpilot.ui.app:main"
+optionpilot-mcp = "optionpilot.integrations.mcp_server:main"
 
 [build-system]
 requires = ["hatchling"]
