@@ -14,6 +14,7 @@ from optionpilot.tools import (
     ask_user,
     detect_unusual_activity,
     fetch_options_data,
+    fundamentals_research,
     funding_analysis,
     grid_backtest,
     list_experiments,
@@ -44,6 +45,7 @@ OPTIONS_BUILDERS = [
     market_sentiment.build,
     stock_scanner.build,
     multi_factor.build,
+    fundamentals_research.build,
     list_experiments.build,
     show_trajectory.build,
 ]

@@ -72,12 +72,8 @@ _FUND_KEYS = {
 }
 
 
-def load_fundamentals(ticker: str) -> dict:
-    """Fundamental + valuation fields from yfinance's .info (best-effort; keys may be missing for
-    some names). Numeric where available; also returns sector and market_cap for context."""
-    import yfinance as yf
-
-    info = yf.Ticker(ticker.upper()).info or {}
+def _map_info(info: dict) -> dict:
+    """Map a yfinance .info dict to our snapshot metric names (numeric where present)."""
     out: dict = {}
     for name, src in _FUND_KEYS.items():
         v = info.get(src)
@@ -88,3 +84,69 @@ def load_fundamentals(ticker: str) -> dict:
     mc = info.get("marketCap")
     out["market_cap"] = float(mc) if isinstance(mc, (int, float)) else None
     return out
+
+
+def load_fundamentals(ticker: str) -> dict:
+    """Fundamental + valuation snapshot from yfinance's .info (best-effort; some keys may be
+    missing). Numeric where available; also returns sector and market_cap for context."""
+    import yfinance as yf
+
+    return _map_info(yf.Ticker(ticker.upper()).info or {})
+
+
+# quarterly income-statement line items -> the yfinance row names we accept (aliases vary)
+_FIN_ROWS = {
+    "revenue": ["Total Revenue", "TotalRevenue", "Operating Revenue"],
+    "gross_profit": ["Gross Profit", "GrossProfit"],
+    "operating_income": ["Operating Income", "OperatingIncome", "Total Operating Income As Reported"],
+    "net_income": ["Net Income", "NetIncome", "Net Income Common Stockholders"],
+    "diluted_eps": ["Diluted EPS", "DilutedEPS"],
+}
+
+
+def load_financials(ticker: str, quarters: int = 8) -> dict:
+    """Recent quarterly income-statement lines + the current .info snapshot + next earnings date.
+
+    Returns {"quarterly": [oldest..newest of {period, revenue, gross_profit, operating_income,
+    net_income, diluted_eps}], "snapshot": <_map_info>, "next_earnings": iso|None}. Best-effort:
+    yfinance shapes vary, so missing pieces degrade to None rather than raising."""
+    import yfinance as yf
+
+    t = yf.Ticker(ticker.upper())
+    quarterly: list[dict] = []
+    try:
+        q = t.quarterly_income_stmt
+    except Exception:  # noqa: BLE001
+        q = None
+    if q is not None and not q.empty:
+        for col in list(q.columns)[: int(quarters)]:   # yfinance gives newest-first
+            row = {"period": col.date().isoformat() if hasattr(col, "date") else str(col)}
+            for name, aliases in _FIN_ROWS.items():
+                val = None
+                for a in aliases:
+                    if a in q.index:
+                        v = q.loc[a, col]
+                        if v == v:   # not NaN
+                            val = float(v)
+                            break
+                row[name] = val
+            quarterly.append(row)
+        quarterly.reverse()   # oldest -> newest
+
+    try:
+        snapshot = _map_info(t.info or {})
+    except Exception:  # noqa: BLE001
+        snapshot = {}
+
+    next_earnings = None
+    try:
+        cal = t.calendar
+        ed = cal.get("Earnings Date") if isinstance(cal, dict) else None
+        if isinstance(ed, (list, tuple)) and ed:
+            next_earnings = str(ed[0])
+        elif ed:
+            next_earnings = str(ed)
+    except Exception:  # noqa: BLE001
+        next_earnings = None
+
+    return {"quarterly": quarterly, "snapshot": snapshot, "next_earnings": next_earnings}

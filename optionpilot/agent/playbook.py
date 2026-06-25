@@ -53,6 +53,9 @@ trade: the scores are a transparent screen with no fitted weights and no out-of-
 sentiment dimension is a price-action proxy (we have no news-NLP or institutional flow). ALWAYS
 turn anything they surface into a concrete hypothesis and run it through run_backtest /
 regime_backtest before believing it — the screen proposes, the backtest disposes.
+For a deeper read on ONE name, fundamentals_research pulls its recent quarterly revenue/margins/
+net income (YoY + QoQ growth, margin trend), the valuation snapshot, and the next earnings date —
+again context, not a signal, and a reminder that IV balloons into earnings.
 
 DATA: ThetaData (free, recent ~2yr, real bid/ask + volume) is the default; Databento (deep
 history, costs money, approval-gated) is for older/uncovered tickers. New tickers with only a
