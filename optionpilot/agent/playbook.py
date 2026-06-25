@@ -36,6 +36,11 @@ NON-NEGOTIABLE PRINCIPLES:
   n_trades is BY DESIGN (non-overlapping holds) or THIN DATA (chain_coverage / skips:
   no_contract_in_dte_window high => the free source's chain is sparse, try Databento or wider DTE).
   Report which it is; a low trade count from thin data is a different problem than from design.
+- Overlapping sampling (entry_every_days>0) is for ESTIMATING per-trade stats, NOT a realizable
+  return. Under it the tool WITHHOLDS excess_vs_buy_hold and sets total_return_realizable=false +
+  a warning — NEVER compare that total_return/Sharpe to buy&hold; re-run with entry_every_days=0
+  for any B&H comparison. Reality check: a covered call CANNOT beat buy&hold in a rally (its upside
+  is capped). If a backtest says it does, suspect overlapping inflation, not a real edge.
 - Report costs, drawdowns, assignment, and underperformance honestly. Surface negative or
   inconclusive results rather than dressing them up.
 - You orchestrate and interpret; the tools compute. Never invent or adjust a metric.

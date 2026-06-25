@@ -59,6 +59,27 @@ def test_liquidity_reason_when_volume_below_threshold():
     assert "流動性" in d["low_trade_count_reason"]
 
 
+def test_overlapping_withholds_buyhold_comparison_and_flags():
+    opt, under = _put_chain(n_days=120, dte=30)
+    m = cash_secured_put_backtest(
+        opt, under, _params(min_contract_volume=0, entry_every_days=5)).metrics
+    assert m["overlapping_samples"] is True
+    assert m["total_return_realizable"] is False
+    assert "warning" in m
+    assert "excess_vs_buy_hold" not in m        # NOT comparable to B&H under overlap
+    assert "benchmark_buy_hold" in m            # the factual B&H number is still provided
+    assert 0.0 <= m["win_rate"] <= 1.0          # per-trade stats stay valid
+
+
+def test_non_overlapping_keeps_realizable_buyhold_comparison():
+    opt, under = _put_chain(n_days=120, dte=30)
+    m = cash_secured_put_backtest(
+        opt, under, _params(min_contract_volume=0, entry_every_days=0)).metrics
+    assert "excess_vs_buy_hold" in m
+    assert "warning" not in m
+    assert m.get("total_return_realizable") is not False
+
+
 def test_covered_call_also_has_diagnostics():
     start = date(2024, 1, 1)
     dates = [start + timedelta(days=k) for k in range(90)]

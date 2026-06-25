@@ -115,7 +115,18 @@ def _summarize(trades, p, liquidity_skips, u_dates, u_prices):
     s1 = _asof_price(u_dates, u_prices, trades[-1]["expiry"])
     if s0 and s1 and s0 > 0:
         metrics["benchmark_buy_hold"] = s1 / s0 - 1.0
-        metrics["excess_vs_buy_hold"] = total_return - (s1 / s0 - 1.0)
+        if p.entry_every_days > 0:
+            # OVERLAPPING sampling: total_return (and Sharpe) compound OVERLAPPING trades, so they
+            # are not realizable on one account and NOT comparable to a single-path buy & hold.
+            # Per-trade stats (win_rate / mean_trade_return / assigned_rate) stay valid; the B&H
+            # excess is therefore withheld rather than computed off an inflated total.
+            metrics["total_return_realizable"] = False
+            metrics["warning"] = (
+                "重疊抽樣(entry_every_days>0):total_return 與 Sharpe 由重疊交易複利而來,"
+                "不可實現、不可與買進持有相比。要比 B&H 請改用 entry_every_days=0;此模式只信 "
+                "win_rate / mean_trade_return / assigned_rate 等每筆統計。")
+        else:
+            metrics["excess_vs_buy_hold"] = total_return - (s1 / s0 - 1.0)
     return returns, metrics
 
 

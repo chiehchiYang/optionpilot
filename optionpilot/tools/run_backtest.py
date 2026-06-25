@@ -41,10 +41,12 @@ PARAMETERS = {
                            "description": "Annual rate earned on cash collateral, e.g. 0.05; "
                            "0 ignores it (understates a cash-secured put's real return)."},
         "entry_every_days": {"type": "integer", "default": 0,
-                             "description": "0 = sequential non-overlapping (clean metrics, "
-                             "default). >0 opens a new position every N trading days (overlapping "
-                             "sampling, ~5=weekly) for more trades on short histories — but the "
-                             "annualized Sharpe becomes inflated/unreliable under overlap."},
+                             "description": "0 = sequential non-overlapping (clean, realizable "
+                             "metrics, default — USE THIS to compare vs buy&hold). >0 opens a new "
+                             "position every N trading days (overlapping sampling, ~5=weekly) for "
+                             "more trades / better per-trade stats on short histories — but "
+                             "total_return AND Sharpe become inflated and NOT comparable to "
+                             "buy&hold (the tool withholds excess_vs_buy_hold and flags it)."},
     },
     "required": ["ticker", "start", "end"],
 }
