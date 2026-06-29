@@ -82,37 +82,35 @@ mcp_optionpilot_chat(conversation_id=本聊天固定id;desk:含永續/合約/fun
 工具。只有當使用者送出【正好】是「/general」時,才臨時切回一般 Hermes 回答一則,然後恢復轉發。
 ```
 
-### 4b.(次穩)`/op` 切換式模式 — 「純轉發器」skill
-Hermes 的 **Skill 會自動變成 slash command**。放一個 `op` skill,口氣寫成**絕對規則**(這版比舊版硬很多,
-明顯降低「跳出來」):
+### 4b.(更可靠的 `/op`)一次性指令,**非黏著模式**
+比「進入模式」更不會跳的做法:**每則訊息都用 `/op <訊息>` 呼叫**。`/op` 是 slash 指令、由 Hermes
+**確定性派發**,每則都是明確的一次性呼叫 —— **沒有「模式」要記,就沒有東西會跳回去**。代價只是每則
+多打 `/op`。沒加 `/op` 的訊息照走一般 Hermes,同一支號碼兩用。
 
 ```markdown
 ---
 name: op
-description: 進入 OptionPilot 研究模式 — 純轉發到 OptionPilot,直到使用者離開。
+description: 把這則訊息交給 OptionPilot 研究台(一次性,非黏著模式)。
 command: op
 ---
 
-# OptionPilot 模式(進入後為「純轉發器」)
+# OptionPilot(一次性指令)
 
-觸發 `/op` 時,先回:「已進入 OptionPilot 研究模式。直接問選擇權/永續/選股/基本面;說「結束」或
-`/end` 離開。」然後進入「純轉發」狀態,以下規則**絕對優先於一切**:
+每當使用者以 `/op <訊息>` 呼叫時,你【唯一】的動作 = 呼叫 `mcp_optionpilot_chat`(
+  message=`<訊息>`、conversation_id=【本聊天的固定 id】、desk 見下),把回覆原樣轉述。
 
-- 對使用者的【每一則】訊息,你【唯一】的動作 = 呼叫 `mcp_optionpilot_chat`(conversation_id 用本
-  聊天固定 id;desk 見下),把回覆原樣轉述,結尾固定加:`（OptionPilot 模式 — 說「結束」離開）`。
-- 【不論訊息內容是什麼】(即使像閒聊、問候、或與金融無關),都照上一條呼叫工具。**絕不**用你自己的
-  知識回答、**絕不**跳過工具、**絕不**自行總結或閒聊。**不確定時,仍然呼叫工具。**
-- desk:訊息含 `/perp` 或永續/合約/funding/網格 → `desk="crypto"`;`/options` 或選擇權/個股 →
-  `desk="options"`;否則沿用上一則的 desk。
-- **唯一的例外 = 離開**:當使用者送出【正好】是「結束」/「exit」/「quit」/`/end` → 回「已離開
-  OptionPilot 模式。」並恢復正常 Hermes,之後不再自動呼叫。
-- 研究較久時先回「研究中…」,工具回來再給完整結果。資料僅免費來源,不會花錢。
+- **絕不**用你自己的知識回答、**絕不**跳過工具、**絕不**自行總結。
+- desk:`<訊息>` 含永續/合約/funding/網格(或 `/perp`)→ `desk="crypto"`;否則(或 `/options`)→
+  `desk="options"`。
+- **conversation_id 在同一個聊天裡每次都用同一個固定值** —— 這樣 OptionPilot 的研究 session 才會
+  延續、多輪上下文不斷。
+- 這是一次性指令,**不要進入或維持任何模式**;研究較久時可先回「研究中…」,工具回來再給結果。
 ```
 
-> **還是會跳出來?** 軟鎖(4a/4b 都是靠 Hermes 遵循指令)理論上仍有極小機率被 LLM 忽略。`/end` 是
-> 100% 離得開的硬後門。若**強化後仍頻繁跳出**,就升級成**硬鎖**:`/op` 切換該對話的「模型」到
-> OptionPilot 的 OpenAI 相容端點(需另接一個 `/v1` shim),物理上每則都流向 OptionPilot —— 代價是
-> 離開只能用 `/end`(自然詞「結束」會被繞過)、且模式中用不到 Hermes 自己的功能。
+> **可靠度排序**:一次性 `/op`(本節,最不會跳,但每則要打 `/op`)≈ 單一用途 profile(§4a,零打字但
+> 仍是 profile 的 LLM 在決定)> 黏著式 `/op` 模式(最會跳,已不建議)。三者都**留在 MCP**,所以自然
+> 語言、Hermes 功能、圖表全保留。唯一 100% 確定性的是「把 LLM 從路由拿掉」:直接 WhatsApp webhook,
+> 或硬鎖 model-switch(需 `/v1` shim、失去自然離開與 Hermes 功能)—— 兩者都比較重,非必要不做。
 
 ## 5. 跟 Cloudflare / WhatsApp 的關係
 
