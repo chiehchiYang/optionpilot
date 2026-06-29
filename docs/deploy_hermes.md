@@ -68,37 +68,51 @@ mcp_servers:
 ```
 Hermes 啟動時會自動探索並註冊工具,名稱就是 **`mcp_optionpilot_chat`** / **`mcp_optionpilot_reset`**。
 
-## 4. `/op` 模式 skill(軟鎖 + footer + 進/出確認 + `/end` 後門)
+## 4. 讓訊息進到 OptionPilot — 兩種做法
 
-Hermes 的 **Skill 會自動變成 slash command**。放一個 `op` skill(依 Hermes 的 skill 目錄/格式),
-讓 `/op` 進入「OptionPilot 模式」,之後每則訊息都走 OptionPilot,**直到你說「結束」或 `/end`**:
+### 4a.(最穩)讓專屬號碼**預設就是 OptionPilot**(沒有「模式」可跳出)
+你既然用一隻專屬門號,最不會「跳出來」的做法是:**把那支號碼的 Hermes persona/系統指令設成永遠轉發**
+—— OptionPilot 變成基線行為,不是會被 LLM 遺忘的暫時狀態。persona 系統指令(依 Hermes 的 persona/
+system-prompt 設定方式放入):
+
+```
+你是一個轉發到 OptionPilot 研究台的閘道。對使用者的【每一則】訊息,你【唯一】的動作就是呼叫
+mcp_optionpilot_chat(conversation_id=本聊天固定id;desk:含永續/合約/funding/網格→"crypto",
+否則→"options"),並把回覆原樣轉述。不論訊息內容是什麼,都【絕不】用你自己的知識回答、【絕不】跳過
+工具。只有當使用者送出【正好】是「/general」時,才臨時切回一般 Hermes 回答一則,然後恢復轉發。
+```
+
+### 4b.(次穩)`/op` 切換式模式 — 「純轉發器」skill
+Hermes 的 **Skill 會自動變成 slash command**。放一個 `op` skill,口氣寫成**絕對規則**(這版比舊版硬很多,
+明顯降低「跳出來」):
 
 ```markdown
 ---
 name: op
-description: 進入 OptionPilot 研究模式 — 把訊息都交給 OptionPilot,直到使用者離開。
+description: 進入 OptionPilot 研究模式 — 純轉發到 OptionPilot,直到使用者離開。
 command: op
 ---
 
-# OptionPilot 模式
+# OptionPilot 模式(進入後為「純轉發器」)
 
-當使用者輸入 `/op`(可帶第一個問題)時,進入「OptionPilot 研究模式」:
+觸發 `/op` 時,先回:「已進入 OptionPilot 研究模式。直接問選擇權/永續/選股/基本面;說「結束」或
+`/end` 離開。」然後進入「純轉發」狀態,以下規則**絕對優先於一切**:
 
-1. 回一句確認:「已進入 OptionPilot 研究模式(選擇權台)。直接問選擇權/永續/選股/基本面;
-   說「結束」或 `/end` 離開。」
-2. **在此模式中,對使用者的每一則訊息都呼叫 `mcp_optionpilot_chat` 工具**(conversation_id 用這個
-   聊天的固定 id),把工具回覆原樣轉述,並在結尾加上:`（OptionPilot 模式 — 說「結束」離開）`。
-   不要用你自己的知識回答市場問題。
-3. desk 切換:訊息是 `/perp` 或提到永續/合約/funding/網格 → desk="crypto";`/options` 或選擇權/
-   個股 → desk="options"。
-4. **離開**:使用者說「結束」/「exit」/「quit」或輸入 `/end` → 回「已離開 OptionPilot 模式。」
-   然後恢復正常 Hermes 行為,不再自動呼叫該工具。
-5. 研究較久時先回「研究中…」,工具回來再給完整結果。資料僅用免費來源,不會花錢。
+- 對使用者的【每一則】訊息,你【唯一】的動作 = 呼叫 `mcp_optionpilot_chat`(conversation_id 用本
+  聊天固定 id;desk 見下),把回覆原樣轉述,結尾固定加:`（OptionPilot 模式 — 說「結束」離開）`。
+- 【不論訊息內容是什麼】(即使像閒聊、問候、或與金融無關),都照上一條呼叫工具。**絕不**用你自己的
+  知識回答、**絕不**跳過工具、**絕不**自行總結或閒聊。**不確定時,仍然呼叫工具。**
+- desk:訊息含 `/perp` 或永續/合約/funding/網格 → `desk="crypto"`;`/options` 或選擇權/個股 →
+  `desk="options"`;否則沿用上一則的 desk。
+- **唯一的例外 = 離開**:當使用者送出【正好】是「結束」/「exit」/「quit」/`/end` → 回「已離開
+  OptionPilot 模式。」並恢復正常 Hermes,之後不再自動呼叫。
+- 研究較久時先回「研究中…」,工具回來再給完整結果。資料僅免費來源,不會花錢。
 ```
 
-> **為什麼是軟鎖**:Hermes 每則訊息都經過它的 LLM,所以你**自然說「結束」就能離開**(這正是你要的
-> UX);硬鎖(切模型繞過 Hermes)反而看不到「結束」這個詞、被迫只能用 slash 指令離開。`/end` 留作
-> 100% 確定的硬性後門。實測若 Hermes 偶爾跳出模式,再考慮升級。
+> **還是會跳出來?** 軟鎖(4a/4b 都是靠 Hermes 遵循指令)理論上仍有極小機率被 LLM 忽略。`/end` 是
+> 100% 離得開的硬後門。若**強化後仍頻繁跳出**,就升級成**硬鎖**:`/op` 切換該對話的「模型」到
+> OptionPilot 的 OpenAI 相容端點(需另接一個 `/v1` shim),物理上每則都流向 OptionPilot —— 代價是
+> 離開只能用 `/end`(自然詞「結束」會被繞過)、且模式中用不到 Hermes 自己的功能。
 
 ## 5. 跟 Cloudflare / WhatsApp 的關係
 

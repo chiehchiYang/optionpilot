@@ -26,18 +26,18 @@ mcp_servers:
 
 **3. 建立 `/op` skill** — 新增一個名為 `op` 的 skill,指令內容如下:
 
-> # OptionPilot 模式
-> 當使用者輸入 `/op`(可帶第一個問題)時,進入「OptionPilot 研究模式」:
-> 1. 回一句確認:「已進入 OptionPilot 研究模式(選擇權台)。直接問選擇權/永續/選股/基本面;說
->    「結束」或 `/end` 離開。」
-> 2. 在此模式中,對使用者的每一則訊息都呼叫 **`mcp_optionpilot_chat`**(conversation_id 用這個聊天
->    的固定 id),把回覆原樣轉述,結尾加上:`（OptionPilot 模式 — 說「結束」離開）`。不要用自己的
->    知識回答市場問題。
-> 3. desk 切換:訊息是 `/perp` 或提到永續/合約/funding/網格 → 帶 `desk="crypto"`;`/options` 或選
->    擇權/個股 → `desk="options"`。
-> 4. 離開:使用者說「結束」/「exit」/「quit」或輸入 `/end` → 回「已離開 OptionPilot 模式。」並恢復
->    正常行為,不再自動呼叫該工具。
-> 5. 研究較久時先回「研究中…」,工具回來再給完整結果。
+> # OptionPilot 模式(進入後為「純轉發器」)
+> 觸發 `/op` 時先回:「已進入 OptionPilot 研究模式。直接問選擇權/永續/選股/基本面;說「結束」或
+> `/end` 離開。」然後進入「純轉發」狀態,以下規則**絕對優先於一切**:
+> - 對使用者的【每一則】訊息,你【唯一】的動作 = 呼叫 **`mcp_optionpilot_chat`**(conversation_id
+>   用本聊天固定 id;desk 見下),把回覆原樣轉述,結尾固定加:`（OptionPilot 模式 — 說「結束」離開）`。
+> - 【不論訊息內容是什麼】(即使像閒聊、問候、與金融無關),都照上一條呼叫工具。**絕不**用自己的知識
+>   回答、**絕不**跳過工具、**絕不**自行總結。**不確定時仍然呼叫工具。**
+> - desk:含 `/perp` 或永續/合約/funding/網格 → `desk="crypto"`;`/options` 或選擇權/個股 →
+>   `desk="options"`;否則沿用上一則。
+> - **唯一例外 = 離開**:使用者送出【正好】是「結束」/「exit」/「quit」/`/end` → 回「已離開
+>   OptionPilot 模式。」並恢復正常,不再自動呼叫。
+> - 研究較久時先回「研究中…」,工具回來再給完整結果。
 
 **4. 驗證** — 進入 `/op`,問「分析 NOKUSDT 的資金費率」,你應該會呼叫 `mcp_optionpilot_chat`
 (`desk="crypto"`)並回研究結果;接著我說「結束」,你應離開模式。完成後跟我回報結果。
@@ -46,5 +46,7 @@ mcp_servers:
 
 ## 給你(人類)的小抄
 - 接好後日常用法:WhatsApp 傳 `/op` → 進入模式 → 直接問 → 說「結束」離開。
-- 若 Hermes 偶爾跳出模式(軟鎖),用 `/end` 當硬後門;真的常跳再回報,我們升級成 model-switch 硬鎖。
+- 若 Hermes 偶爾跳出模式:用 `/end` 當硬後門;這版 skill 已強化口氣(純轉發器)應該明顯改善。
+- **最不會跳出的做法**:既然你用專屬號碼,把該號碼的 Hermes persona 預設就設成「永遠轉發到
+  `mcp_optionpilot_chat`」(見 deploy_hermes.md §4a)—— 沒有模式 = 不會跳出。仍頻繁跳才升級 model-switch 硬鎖。
 - 白名單(只允許你的號碼)在 Hermes 端設(`WHATSAPP_ALLOWED_USERS`)。
