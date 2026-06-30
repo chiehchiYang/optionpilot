@@ -9,6 +9,7 @@ gradio is imported lazily so the streaming helpers stay testable.
 
 from __future__ import annotations
 
+import os
 import queue
 import threading
 from functools import partial
@@ -93,34 +94,63 @@ _EXAMPLES = {
 def _make_tab(gr, profile: Profile):
     """Build one isolated desk tab (its own chatbot + session State + handler)."""
     with gr.Tab(profile.label):
-        gr.Markdown(f"**{profile.label}** — {profile.blurb}\n\n_想知道能做什麼?問「**你有哪些工具?**」_")
-        chatbot = gr.Chatbot(height=560, show_label=False, render_markdown=True)
+        gr.Markdown(f"**{profile.label}** — {profile.blurb}", elem_id="op-blurb")
+        chatbot = gr.Chatbot(height="70vh", show_label=False, render_markdown=True,
+                             elem_classes=["op-chat"])
         session = gr.State()
-        msg = gr.Textbox(placeholder=_EXAMPLES[profile.key][1], show_label=False)
+        with gr.Row(equal_height=True):
+            msg = gr.Textbox(placeholder=_EXAMPLES[profile.key][1], show_label=False,
+                             container=False, scale=8)
+            send = gr.Button("傳送", variant="primary", scale=1, min_width=72)
         gr.Examples(examples=_EXAMPLES[profile.key], inputs=msg)
-        msg.submit(partial(chat_handler, profile=profile),
-                   [msg, chatbot, session], [chatbot, session]).then(lambda: "", None, msg)
+
+        def _bind(trigger):
+            trigger(partial(chat_handler, profile=profile),
+                    [msg, chatbot, session], [chatbot, session]).then(lambda: "", None, msg)
+        _bind(msg.submit)
+        _bind(send.click)
+
+
+# Mobile-friendly: full width, no wasted padding, hide the Gradio footer, condense the header.
+_MOBILE_CSS = """
+.gradio-container { max-width: 100% !important; padding: 6px !important; }
+footer { display: none !important; }
+#op-header { margin: 4px 0 8px !important; }
+#op-blurb { margin: 2px 0 6px !important; font-size: 0.9rem; }
+@media (max-width: 640px) {
+  .gradio-container { padding: 4px !important; }
+  #op-header h1 { font-size: 1.25rem !important; }
+}
+"""
 
 
 def build_app():
     import gradio as gr
 
-    with gr.Blocks(title="OptionPilot") as app:
-        gr.Markdown(
-            "# 🛞 OptionPilot\n"
-            "兩個獨立研究台,context 互不干擾:**股票期權** 跑期權策略方法論;"
-            "**幣安永續** 研究 USDⓈ-M 永續合約的資金費率與網格(公開資料、不下單)。需先啟動本地模型。"
-        )
+    with gr.Blocks(title="OptionPilot", fill_height=True) as app:
+        gr.Markdown("# 🛞 OptionPilot — 兩個獨立研究台(股票期權 / 幣安永續)", elem_id="op-header")
         with gr.Tabs():
             _make_tab(gr, OPTIONS_PROFILE)
             _make_tab(gr, CRYPTO_PROFILE)
     return app
 
 
+def _ui_auth(cred: str | None):
+    """Parse OPTIONPILOT_UI_AUTH='user:pass' into a (user, pass) tuple for Gradio's built-in basic
+    auth — a second lock behind Cloudflare Access when the UI is exposed publicly. None when unset
+    or malformed (then there's no app-level auth; rely on Cloudflare Access)."""
+    if cred and ":" in cred:
+        user, pw = cred.split(":", 1)
+        if user and pw:
+            return (user, pw)
+    return None
+
+
 def main():
     import gradio as gr
 
-    build_app().launch(server_name="0.0.0.0", server_port=7860, theme=gr.themes.Soft())
+    build_app().launch(server_name="0.0.0.0", server_port=7860, theme=gr.themes.Soft(),
+                       css=_MOBILE_CSS, auth=_ui_auth(os.getenv("OPTIONPILOT_UI_AUTH")))
 
 
 if __name__ == "__main__":
