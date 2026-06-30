@@ -107,6 +107,17 @@ OPTIONPILOT_DATA_SOURCE=thetadata
 ```
 LiteLLM 會依 model 前綴自動找對應的 provider key。
 
+**或用 OpenCode Go(一個訂閱、多種模型,$10/月)** —— 可攜的 OpenAI 相容 key,無 GPU:
+```
+OPTIONPILOT_MODEL=openai/<go-的模型id>          # 例:deepseek-v4-pro / qwen3.7-max
+OPTIONPILOT_API_BASE=https://opencode.ai/zen/go/v1
+OPTIONPILOT_API_KEY=<你的 OpenCode Go API key>
+```
+- key:opencode.ai → Zen → 訂閱 **Go** → 複製;模型 **id 要一字不差**,到
+  `https://opencode.ai/zen/go/v1/models` 查實際 slug。
+- OptionPilot 重度用 tool-calling → 選會 function calling 的模型(DeepSeek V4 Pro / Qwen3.7 /
+  Kimi K2.7 Code…);$10/月有用量上限,密集研究可能撞限。
+
 ---
 
 ## 4. 資料來源(哪些功能需要 key)

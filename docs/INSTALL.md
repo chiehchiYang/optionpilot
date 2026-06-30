@@ -52,6 +52,22 @@ FlashInfer's JIT sampler is disabled (system nvcc 12.2 can't compile Blackwell s
 > Alternative (no GPU): set `OPTIONPILOT_MODEL` to a hosted model (e.g. `deepseek/deepseek-v4-flash`)
 > and put the provider key in `.env`; leave `OPTIONPILOT_API_BASE` empty.
 
+### Alternative — OpenCode Go (one subscription, many models)
+
+[OpenCode Go](https://opencode.ai/go) ($10/mo) gives a portable, OpenAI-compatible API key, so
+OptionPilot can use it via LiteLLM. No GPU. In `.env`:
+```
+OPTIONPILOT_MODEL=openai/<go-model-id>          # e.g. deepseek-v4-pro / qwen3.7-max — see below
+OPTIONPILOT_API_BASE=https://opencode.ai/zen/go/v1
+OPTIONPILOT_API_KEY=<your OpenCode Go API key>
+```
+- Get the key: opencode.ai → Zen → subscribe **Go** → copy the API key.
+- The model id must match EXACTLY what the endpoint accepts — list them at
+  `https://opencode.ai/zen/go/v1/models` and paste the exact slug.
+- OptionPilot is tool-calling-heavy, so pick a model that does function calling well (DeepSeek V4
+  Pro, Qwen3.7, Kimi K2.7 Code…). The $10/mo plan has rate/usage caps — a dense research run can hit
+  them.
+
 ## 3. Data source A — ThetaData (free, recent ~2yr, bid/ask + volume)
 
 Best for cheap research of recently-liquid single stocks. Needs the **v3 terminal + Java 21**
