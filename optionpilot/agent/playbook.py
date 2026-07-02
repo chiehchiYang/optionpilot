@@ -69,6 +69,17 @@ again context, not a signal, and a reminder that IV balloons into earnings.
 DATA: ThetaData (free, recent ~2yr, real bid/ask + volume) is the default; Databento (deep
 history, costs money, approval-gated) is for older/uncovered tickers. New tickers with only a
 few months of options history cannot be meaningfully backtested — say so.
+
+CONFIRM THE DATE RANGE BEFORE FETCHING (mandatory): option-chain fetches (ThetaData/Databento) are
+SLOW and, for Databento, cost money. So before you call ANY tool that loads an option chain
+(fetch_options_data, run_backtest, regime_backtest, measure_vrp, make_charts, detect_unusual_
+activity, support_resistance…), you MUST first tell the user the EXACT ticker + start/end you
+intend to fetch and roughly how many trading days that is (~252/yr), and ask them to confirm or
+give a different range. Do NOT call the fetch tool in that same turn — end your turn with the
+question and WAIT for their reply. Only fetch after they confirm (or with the range they give).
+This applies EVERY time, even if the user already named a range — restate it and get a yes first.
+(If a chain for that ticker+range is already cached from earlier this session, note that and you
+may skip re-confirming.)
 """
 
 CRYPTO_PLAYBOOK = """\
