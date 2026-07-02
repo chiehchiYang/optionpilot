@@ -24,6 +24,7 @@ from optionpilot.agent.router import ToolRouter
 from optionpilot.agent.trajectory import Trajectory
 from optionpilot.config import Config
 from optionpilot.llm import LLMClient
+from optionpilot.progress import progress_to
 
 OPTIONS_SYSTEM_PROMPT = (
     "You are OptionPilot, an autonomous options-strategy research agent — an ML intern for "
@@ -182,7 +183,8 @@ class ExperimentLoop:
         """Run the reactive tool-calling loop for one task; record + persist the trajectory."""
         self.trajectory = Trajectory(task, self.profile_key)
         self.trajectory.add("task", task)
-        text = self._react(task)
+        with progress_to(lambda m: self.on_event("progress", m)):  # live fetch/backtest status
+            text = self._react(task)
         self.trajectory.verdict(text)
         self._persist_trajectory()
         return to_traditional(text)
@@ -196,20 +198,21 @@ class ExperimentLoop:
         self.trajectory = Trajectory(task, self.profile_key)
         self.trajectory.add("task", task)
         history: list[dict] = []
-        for r in range(max_rounds):
-            proposal = self.planner.propose_next(task, history)
-            self.trajectory.plan(proposal.hypothesis, proposal.change, proposal.rationale,
-                                 proposal.done)
-            self.on_event("plan", f"R{r + 1}: {proposal.change or '(judged: done)'}")
-            if proposal.done:
-                break
-            directive = (f"研究假設:{proposal.hypothesis}\n下一步請執行:{proposal.change}\n"
-                         "用你的工具實際驗證,並讀出關鍵指標(務必對比 buy&hold)。")
-            result = self._react(directive)
-            history.append({"hypothesis": proposal.hypothesis, "change": proposal.change,
-                            "result": result[:800]})
-        verdict = self._react("根據以上所有實驗,寫出誠實的最終結論:證據強弱、是否優於買進持有、"
-                              "有哪些限制。不要誇大。")
+        with progress_to(lambda m: self.on_event("progress", m)):  # live fetch/backtest status
+            for r in range(max_rounds):
+                proposal = self.planner.propose_next(task, history)
+                self.trajectory.plan(proposal.hypothesis, proposal.change, proposal.rationale,
+                                     proposal.done)
+                self.on_event("plan", f"R{r + 1}: {proposal.change or '(judged: done)'}")
+                if proposal.done:
+                    break
+                directive = (f"研究假設:{proposal.hypothesis}\n下一步請執行:{proposal.change}\n"
+                             "用你的工具實際驗證,並讀出關鍵指標(務必對比 buy&hold)。")
+                result = self._react(directive)
+                history.append({"hypothesis": proposal.hypothesis, "change": proposal.change,
+                                "result": result[:800]})
+            verdict = self._react("根據以上所有實驗,寫出誠實的最終結論:證據強弱、是否優於買進持有、"
+                                  "有哪些限制。不要誇大。")
         self.trajectory.verdict(verdict)
         self._persist_trajectory()
         return to_traditional(verdict)

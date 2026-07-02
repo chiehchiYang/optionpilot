@@ -123,14 +123,38 @@ class ThetaDataSource(OptionDataSource):
         if path.exists():  # free + local, but slow (1 concurrent) — cache so tools reuse it
             return _ensure_date_cols(pd.read_parquet(path))
 
+        import time
+
+        from optionpilot.progress import report
+
         url = f"{self.base}/v3/option/history/eod"
+        chunks = list(_date_chunks(start, end, max_days=365))  # v3 caps a request at 365 days
+        report(f"ThetaData 抓取 {ticker.upper()} {start}~{end}:{len(chunks)} 個區塊"
+               "(免費版單線,長區間可能數分鐘)…")
         rows: list[dict] = []
-        for s, e in _date_chunks(start, end, max_days=365):  # v3 caps a request at 365 days
+        t0 = time.monotonic()
+        for i, (s, e) in enumerate(chunks, 1):  # noqa: E741 - e is a date string here
             params = {"symbol": ticker.upper(), "expiration": "*",
                       "start_date": s, "end_date": e, "format": "ndjson"}
-            r = requests.get(url, params=params, timeout=300)
-            r.raise_for_status()
-            rows.extend(json.loads(line) for line in r.text.splitlines() if line.strip())
+            c0 = last = time.monotonic()
+            with requests.get(url, params=params, timeout=300, stream=True) as r:
+                r.raise_for_status()
+                for line in r.iter_lines(decode_unicode=True):
+                    if not line:
+                        continue
+                    rows.append(json.loads(line))
+                    now = time.monotonic()
+                    if now - last >= 2.0:  # heartbeat: still alive + throughput
+                        report(f"區塊 {i}/{len(chunks)}:已收到 {len(rows):,} 筆"
+                               f"(本區塊 {now - c0:.0f}s)…")
+                        last = now
+            elapsed = time.monotonic() - t0
+            if i < len(chunks):  # ETA from the observed per-chunk pace
+                eta = elapsed * (len(chunks) - i) / i
+                report(f"區塊 {i}/{len(chunks)} 完成,已 {elapsed:.0f}s,預估剩餘 ~{eta:.0f}s"
+                       f"(共 {len(rows):,} 筆)")
+            else:
+                report(f"抓取完成:{len(rows):,} 筆,耗時 {elapsed:.0f}s(整理中…)")
         df = _normalize_thetadata(rows)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         df.to_parquet(path)

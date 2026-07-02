@@ -99,13 +99,18 @@ def stream_run(loop, events, message):
 
     threading.Thread(target=_run, daemon=True).start()
     steps = ""
+    status = ""       # a single LIVE line (e.g. ThetaData fetch progress), replaced not appended
     while True:
         ev = events.get()
         if ev is None:
             break
         kind, text = ev
-        steps += f"🔧 `{kind}` · {text}\n\n"
-        yield steps
+        if kind == "progress":
+            status = f"\n⏳ {text}"
+        else:
+            steps += f"🔧 `{kind}` · {text}\n\n"
+            status = ""
+        yield (steps + status).strip()
     yield (steps + ("\n---\n\n" if steps else "") + result.get("out", "")).strip()
 
 
