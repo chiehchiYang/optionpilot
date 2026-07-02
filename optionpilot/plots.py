@@ -15,10 +15,31 @@ import matplotlib.dates as mdates  # noqa: E402
 import matplotlib.font_manager as fm  # noqa: E402
 import matplotlib.pyplot as plt  # noqa: E402
 
-# Use a Traditional-Chinese-capable font if present, so CJK titles aren't tofu boxes.
-_CJK = next((n for n in ("Noto Sans CJK TC", "Noto Sans CJK SC", "WenQuanYi Zen Hei",
-                         "Droid Sans Fallback")
-             if n in {f.name for f in fm.fontManager.ttflist}), None)
+# Pick a CJK-capable font that's ACTUALLY installed, so 中文 titles aren't tofu boxes. We output
+# Traditional Chinese, so prefer TC faces; the list spans macOS / Linux / Windows defaults (the
+# old list was Linux-only, so charts on a Mac fell back to DejaVu -> garbled).
+_CJK_CANDIDATES = (
+    "PingFang TC", "Heiti TC", "Hiragino Sans CNS", "Apple LiGothic",   # macOS (TC)
+    "Microsoft JhengHei",                                               # Windows (TC)
+    "Noto Sans CJK TC", "Noto Sans TC", "Noto Serif CJK TC",            # Linux (TC)
+    "Arial Unicode MS", "PingFang SC", "STHeiti", "Heiti SC",           # macOS (broad / SC)
+    "Microsoft YaHei",                                                  # Windows (SC)
+    "Noto Sans CJK SC", "Noto Sans SC", "WenQuanYi Zen Hei",            # Linux (SC)
+    "Droid Sans Fallback",
+)
+
+
+def _pick_cjk(available) -> str | None:
+    """First installed CJK font from the prioritized list (TC preferred). None if none found."""
+    return next((n for n in _CJK_CANDIDATES if n in available), None)
+
+
+_CJK = _pick_cjk({f.name for f in fm.fontManager.ttflist})
+if _CJK is None:  # warn loudly so garbled charts have an obvious cause + fix
+    import sys
+    print("⚠️ plots: no CJK font found — chart Chinese will be garbled. macOS ships PingFang "
+          "(usually auto-detected); on Linux install one (apt install fonts-noto-cjk) then clear "
+          "~/.cache/matplotlib.", file=sys.stderr)
 
 plt.rcParams.update({
     "font.family": ([_CJK] if _CJK else []) + ["DejaVu Sans"],
