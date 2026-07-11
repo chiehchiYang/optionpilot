@@ -222,7 +222,21 @@ def _ui_auth(cred: str | None):
     return None
 
 
+def _raise_open_file_limit(target: int = 8192) -> None:
+    """macOS defaults RLIMIT_NOFILE to 256 — too low for Gradio serving its many static assets
+    (-> OSError 'Too many open files'). Bump this process's soft limit. Best-effort."""
+    try:
+        import resource
+        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+        want = target if hard == resource.RLIM_INFINITY else min(target, hard)
+        if soft < want:
+            resource.setrlimit(resource.RLIMIT_NOFILE, (want, hard))
+    except Exception:  # noqa: BLE001 - e.g. Windows has no `resource`; never block startup
+        pass
+
+
 def main():
+    _raise_open_file_limit()
     build_app().launch(server_name="0.0.0.0", server_port=7860, theme=gr.themes.Soft(),
                        css=_MOBILE_CSS, auth=_ui_auth(os.getenv("OPTIONPILOT_UI_AUTH")))
 

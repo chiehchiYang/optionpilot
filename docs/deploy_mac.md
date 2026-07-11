@@ -171,6 +171,9 @@ uv run optionpilot-ui                                                      # GUI
 - **Ollama 模型不支援 tools**:換一個支援 function calling 的模型;確認用的是 `ollama_chat/` 前綴。
 - **記憶體不足/很慢**:換更小的量化模型(14B→7B),或改走雲端。
 - **port 衝突**:Ollama 預設 11434、Gradio 7860、ThetaData 25503,被占用就改埠或關掉占用程式。
+- **`OSError: [Errno 24] Too many open files`(頁面載不齊/壞掉)**:macOS 預設開檔上限只有 256,
+  Gradio 送一堆前端資產就爆。`optionpilot-ui` 啟動時已會**自動拉高**;若仍遇到,啟動前手動:
+  `ulimit -n 8192`(要跟 `uv run optionpilot-ui` 在同一個終端)。
 - **matplotlib 中文**:已用 Agg backend;圖表中文字型會**自動偵測**跨平台 CJK 字型(macOS 內建的
   PingFang/Heiti、Linux 的 Noto CJK…)。若圖表中文變**亂碼/方框**:代表沒偵測到字型 —— macOS 通常內
   建 PingFang(直接可用);萬一沒有,清 matplotlib 快取重試:`rm -rf ~/.matplotlib ~/.cache/matplotlib`
